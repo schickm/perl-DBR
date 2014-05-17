@@ -8,7 +8,7 @@ my $has_mysql = eval "require DBD::mysql";
 WriteMakefile(
 	      NAME            => 'DBR',
 	      VERSION         => $version,
-              EXE_FILES    => [qw'bin/dbr-admin bin/dbr-dump-spec bin/dbr-load-spec bin/dbr-scan-db bin/dbr-config'],
+              EXE_FILES    => [qw'bin/dbr-admin bin/dbr-dump-spec bin/dbr-load-spec bin/dbr-scan-db bin/dbr-config bin/dbr-migrate'],
 	      PREREQ_PM       => {
 				  'Carp'               => 0,
 				  'Class::Std'         => 0,
