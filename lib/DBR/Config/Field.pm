@@ -103,7 +103,7 @@ sub load{
       my $dbrh = $instance->connect || return croak("Failed to connect to ${\$instance->name}");
 
       die('Failed to select fields') unless
-	my $fields = $dbrh->select(
+	my $fields = $params{inject}{fields} || $dbrh->select(
 				   -table => 'dbr_fields',
 				   # This MUST match constants above
 				   -fields => 'field_id table_id name data_type is_nullable is_signed is_pkey trans_id max_value regex default_val',

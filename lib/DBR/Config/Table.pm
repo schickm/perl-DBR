@@ -17,6 +17,7 @@ my %FIELDS_BY_NAME;
 my %RELATIONS_BY_NAME;
 my %PK_FIELDS;
 my %REQ_FIELDS;
+my $NEXT_METACIRC_ID = -1;
 
 sub load{
       my( $package ) = shift;
@@ -35,7 +36,7 @@ sub load{
       my $dbrh = $instance->connect || return $self->_error("Failed to connect to @{[$instance->name]}");
 
       return $self->_error('Failed to select instances') unless
-	my $tables = $dbrh->select(
+	my $tables = $params{inject}{tables} || $dbrh->select(
 				   -table  => 'dbr_tables',
 				   -fields => 'table_id schema_id name',
 				   -where  => { schema_id => ['d in', @{$schema_ids}] },
@@ -64,11 +65,13 @@ sub load{
 	    DBR::Config::Field->load(
 				     session => $self->{session},
 				     instance => $instance,
+                                     inject => $params{inject},
 				     table_id => \@table_ids,
 				    ) or return $self->_error('failed to load fields');
 
 	    DBR::Config::Relation->load(
 					session => $self->{session},
+                                        inject => $params{inject},
 					instance => $instance,
 					table_id => \@table_ids,
 				       ) or return $self->_error('failed to load relationships');

@@ -44,7 +44,7 @@ sub load{
       my $dbrh = $instance->connect || return $self->_error("Failed to connect to ${\$instance->name}");
 
       return $self->_error('Failed to select from dbr_relationships') unless
-	my $relations = $dbrh->select(
+	my $relations = $params{inject}{relationships} || $dbrh->select(
 				      -table => 'dbr_relationships',
 				      -fields => 'relationship_id from_name from_table_id from_field_id to_name to_table_id to_field_id type',
 				      -where  => { from_table_id => ['d in',@$table_ids] },

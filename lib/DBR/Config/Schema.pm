@@ -15,6 +15,7 @@ my %TABLES_BY_NAME;
 my %INSTANCE_LOOKUP;
 my %SCHEMAS_BY_ID;
 my %SCHEMAS_BY_HANDLE;
+my $NEXT_METACIRC_ID = -1;
 
 sub load{
       my( $package ) = shift;
@@ -33,7 +34,7 @@ sub load{
       return 1 unless @$schema_ids;
 
       return $self->_error('Failed to select instances') unless
-	my $schemas = $dbrh->select(
+	my $schemas = $params{inject}{schemas} || $dbrh->select(
 				    -table => 'dbr_schemas',
 				    -fields => 'schema_id handle display_name',
 				    -where  => { schema_id => ['d in', @{$schema_ids}] },
@@ -50,6 +51,7 @@ sub load{
       DBR::Config::Table->load(
 			       session => $self->{session},
 			       instance => $instance,
+                               inject => $params{inject},
 			       schema_id => \@schema_ids,
 			      ) or return $package->_error('failed to load tables');
 
@@ -87,6 +89,150 @@ sub _register_instance{
       $INSTANCE_LOOKUP{ $schema_id }{ $tag }{ $class } = $guid;
 
       return 1;
+}
+
+sub _get_bootstrap_schema {
+    my ($package, %params) = @_;
+
+    my $MIN_VER = 1;
+    my $MAX_VER = 1;
+
+    # Since positive values are used for 'user' objects, our meta-meta-catalog uses negative IDs
+    my $ver = int($params{version});
+    unless ($ver >= $MIN_VER && $ver <= $MAX_VER) { die "Invalid meta_version $ver in config file" }
+    if (!$SCHEMAS_BY_ID{ -$ver }) {
+        $package->load(
+            inject => $package->_build_bootstrap_schema($ver),
+            session => $params{session},
+            instance => $params{instance},
+            schema_id => [-$ver],
+        );
+    }
+
+    return -$ver;
+}
+
+sub _build_bootstrap_schema {
+    my ($package, $ver) = @_;
+
+    my @COL_INFO = qw{
+        1  dbr_schemas        schema_id        INTEGER:UN:NN
+        1  dbr_schemas        handle           VARCHAR:50
+        1  dbr_schemas        display_name     VARCHAR:50
+
+        1  dbr_instances      instance_id      INTEGER:UN:NN
+        1  dbr_instances      schema_id        INTEGER:UN:NN
+        1  dbr_instances      handle           VARCHAR:50:NN
+        1  dbr_instances      class            VARCHAR:50:NN
+        1  dbr_instances      tag              VARCHAR:250
+        1  dbr_instances      dbname           VARCHAR:250
+        1  dbr_instances      username         VARCHAR:250
+        1  dbr_instances      password         VARCHAR:250
+        1  dbr_instances      host             VARCHAR:250
+        1  dbr_instances      dbfile           VARCHAR:250
+        1  dbr_instances      module           VARCHAR:50:NN
+        1  dbr_instances      readonly         BOOLEAN
+
+        1  dbr_tables         table_id         INTEGER:UN:NN
+        1  dbr_tables         schema_id        INTEGER:UN:NN
+        1  dbr_tables         name             VARCHAR:250:NN
+        1  dbr_tables         display_name     VARCHAR:250
+        1  dbr_tables         is_cachable      BOOLEAN
+
+        1  dbr_fields         field_id         INTEGER:UN:NN
+        1  dbr_fields         table_id         INTEGER:UN:NN
+        1  dbr_fields         name             VARCHAR:250:NN
+        1  dbr_fields         data_type        TINYINT:UN:NN
+        1  dbr_fields         is_nullable      BOOLEAN
+        1  dbr_fields         is_signed        BOOLEAN
+        1  dbr_fields         max_value        INTEGER:UN:NN
+        1  dbr_fields         display_name     VARCHAR:250
+        1  dbr_fields         is_pkey          BOOLEAN:DEF=0
+        1  dbr_fields         index_type       TINYINT
+        1  dbr_fields         trans_id         TINYINT:UN
+        1  dbr_fields         regex            VARCHAR:250
+        1  dbr_fields         default_val      VARCHAR:250
+
+        1  dbr_relationships  relationship_id  INTEGER:UN:NN
+        1  dbr_relationships  from_name        VARCHAR:45:NN
+        1  dbr_relationships  from_table_id    INTEGER:UN:NN
+        1  dbr_relationships  from_field_id    INTEGER:UN:NN
+        1  dbr_relationships  to_name          VARCHAR:45:NN
+        1  dbr_relationships  to_table_id      INTEGER:UN:NN
+        1  dbr_relationships  to_field_id      INTEGER:UN:NN
+        1  dbr_relationships  type             TINYINT:UN:NN
+
+        1  cache_scopes       scope_id         INTEGER:UN:NN
+        1  cache_scopes       digest           CHAR:32:NN
+        1  cache_fielduse     row_id           INTEGER:UN:NN
+        1  cache_fielduse     scope_id         INTEGER:UN:NN
+        1  cache_fielduse     field_id         INTEGER:UN:NN
+
+        1  enum               enum_id          INTEGER:UN:NN
+        1  enum               handle           VARCHAR:250
+        1  enum               name             VARCHAR:250
+        1  enum               override_id      INTEGER:UN
+
+        1  enum_legacy_map    row_id           INTEGER:UN:NN
+        1  enum_legacy_map    context          VARCHAR:250
+        1  enum_legacy_map    field            VARCHAR:250
+        1  enum_legacy_map    enum_id          INTEGER:UN:NN
+        1  enum_legacy_map    sortval          INTEGER
+
+        1  enum_map           row_id           INTEGER:UN:NN
+        1  enum_map           field_id         INTEGER:UN:NN
+        1  enum_map           enum_id          INTEGER:UN:NN
+        1  enum_map           sortval          INTEGER
+    };
+
+    my @REL_INFO = qw{
+        dbr_instances.schema_id          instances           schema      dbr_schemas.schema_id
+        dbr_tables.schema_id             tables              schema      dbr_schemas.schema_id
+        dbr_fields.table_id              fields              table       dbr_tables.table_id
+        dbr_relationships.from_table_id  from_relationships  from_table  dbr_tables.table_id
+        dbr_relationships.from_field_id  from_relationships  from_field  dbr_fields.field_id
+        dbr_relationships.to_table_id    to_relationships    to_table    dbr_tables.table_id
+        dbr_relationships.to_field_id    to_relationships    to_field    dbr_fields.field_id
+        cache_fielduse.scope_id          field_use           scope       cache_scopes.scope_id
+        enum_legacy_map.enum_id          legacy_maps         enum        enum.enum_id
+        enum_map.field_id                enum_maps           field       dbr_fields.field_id
+        enum_map.enum_id                 field_maps          enum        enum.enum_id
+    };
+
+    my (@fake_schemas, @fake_tables, @fake_fields, @fake_relationships);
+    my (%table_ids, %field_ids);
+
+    push @fake_schemas, { schema_id => -$ver, handle => "dbr_meta_$ver", display_name => "dbr_meta_$ver" };
+
+    while (my ($verlist, $table_name, $field_name, $type_info) = splice(@COL_INFO, 0, 4)) {
+        next if $verlist !~ /\b$ver\b/;
+
+        my $finfo = { is_pkey => 0, name => $field_name, display_name => undef, index_type => undef, trans_id => undef, regex => undef };
+        $finfo->{default_val} = $type_info =~ s/:DEF=(.*)// ? $1 : undef;
+        $finfo->{is_nullable} = $type_info =~ s/:NN$// ? 0 : 1;
+        $finfo->{is_signed}   = $type_info =~ s/:UN$// ? 0 : 1;
+        $finfo->{max_value}   = $type_info =~ s/:(\d+)$// ? $1 : 0;
+        $finfo->{data_type}   = DBR::Config::Field->get_type_id($type_info);
+
+        $finfo->{table_id} = $table_ids{ $table_name };
+        unless ($finfo->{table_id}) {
+            $finfo->{table_id} = $table_ids{ $table_name } = $NEXT_METACIRC_ID--;
+            push @fake_tables, { table_id => $finfo->{table_id}, schema_id => -$ver, name => $table_name, display_name => undef, is_cachable => undef };
+            $finfo->{is_pkey} = 1;
+        }
+
+        $finfo->{field_id} = $NEXT_METACIRC_ID--;
+        $field_ids{"$table_name.$field_name"} = [@{$finfo}{'table_id','field_id'}];
+        push @fake_fields, [@{$finfo}{ qw'field_id table_id name data_type is_nullable is_signed is_pkey trans_id max_value regex default_val' }];
+    }
+
+    while (my ($from, $back, $fore, $to) = splice(@REL_INFO, 0, 4)) {
+        $from = $field_ids{$from} || next;
+        $to = $field_ids{$to} || next;
+        push @fake_relationships, { relationship_id => $NEXT_METACIRC_ID--, from_name => $back, from_table_id => $from->[0], from_field_id => $from->[1], to_name => $fore, to_table_id => $to->[0], to_field_id => $to->[1], type => 2 }; #CHILDOF
+    }
+
+    return { relationships => \@fake_relationships, tables => \@fake_tables, fields => \@fake_fields, schemas => \@fake_schemas };
 }
 
 ###################### BEGIN OBJECT ORIENTED CODE ######################

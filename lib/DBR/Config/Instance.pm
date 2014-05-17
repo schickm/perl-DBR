@@ -311,6 +311,14 @@ sub database      { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{database}      }
 sub dbr_bootstrap { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{dbr_bootstrap} }
 sub schema_id     { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{schema_id} }
 sub name          { return $_[0]->handle . ' ' . $_[0]->class }
+sub _fixup_schema_id {
+    my ($self, $schema_id) = @_;
+    my $config = $INSTANCES_BY_GUID{ $self->{guid} };
+    $config->{schema_id} = $schema_id;
+
+    $SCHEMA_MAP{ $config->{schema_id} }{ $config->{tag} }{ $config->{class} } = $config->{guid};
+    DBR::Config::Schema->_register_instance( schema_id => $schema_id, class => $config->{class}, tag => $config->{tag}, guid => $config->{guid} );
+}
 
 #shortcut to fetch the schema object that corresponds to this instance
 sub schema{

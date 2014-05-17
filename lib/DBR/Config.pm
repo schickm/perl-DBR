@@ -76,6 +76,16 @@ sub load_file{
 							   spec   => $instspec
 							  ) or $self->_error("failed to load DBR conf file '$file' (stanza #$count)") && next;
 	    if($instance->dbr_bootstrap){
+                $instance->_fixup_schema_id(
+                    DBR::Config::Schema->_get_bootstrap_schema(
+                        version => $instspec->{meta_version} || 1,
+                        handle => $instance->handle,
+                        session => $self->{session},
+                        instance => $instance,
+                    )
+                );
+
+
 		  #don't bail out here on error
 		  $self->load_dbconf(
 				     dbr      => $dbr,
