@@ -32,7 +32,50 @@ which have been applied.  When a migration is applied or unapplied, the table
 is updated.  You will also have a migration set maintained as a folder in
 version control.
 
+## Genesis migration
+
+A virtual migration created by `dbr-migrate bootstep` containing all schemas,
+tables, fields, and relationships which existed when the bootstrap was run.  It
+is structurally an ordinary migration and can be used as such to populate a new
+empty database system, as long as you're careful to ensure that each database
+system only runs one genesis migration and never loses it.  Attempting to do so
+will almost surely fail; the genesis migration cannot be rolled back if you
+have any data, and trying to load a new one will fail if there are any tables
+in common.
+
 # Workflows
+
+## Starting with migrations
+
+To set up a migration-ready DBR system:
+
+1. Check out this branch and install it.
+
+2. Upgrade your DBR schema to version 2 using
+`example/schemas/dbr_schema_mariadb_v1_to_v2.sql`.
+
+3. Tell DBR about this by adding `meta_version=2` to your DBR configuration
+file.
+
+4. Run `dbr-migrate bootstrap`.  This will scan your database one last time (in
+particular, populating the index meta table you just created), then mark all of
+your schemas as migration-managed and add a genesis migration containing all of
+the tables you had prior.
+
+5. Run `dbr-migrate save` to put this new migration in a file.  During the
+pre-deployment phase, your ability to share migrations will be limited because
+each system will have its own genesis migration that cannot be shared with any
+other system.  At deployment time, a genesis migration will be generated on the
+production system and used to reinitialize all development systems.
+
+6. You are done.  Note that once the genesis migration is created, `dbr-scan`
+and `dbr-load-spec` will become ineffective; all changes must be done through
+`dbr-migrate`.
+
+7. To return to the previous state:
+
+        DELETE * FROM migrations;
+        UPDATE dbr_schemas SET owned_by_migration = 0;
 
 ## Updating / switching branches
 
@@ -96,6 +139,60 @@ are stored in JSON format as in the files.
             crashed TINYINT(1) UNSIGNED,
             contents LONGBLOB
     );
+
+## Migrations DDL
+
+The `dbr-migrate alter` command takes input in a SQL-like language to concisely
+describe changes to your schema.
+
+    use rule :ignorecase;
+
+    rule TOP { [ <ddl> ';' ]* }
+
+    rule ddl:create-schema { CREATE SCHEMA <name> DISPLAY <string> }
+    rule ddl:drop-schema   { DROP SCHEMA <name> }
+    rule ddl:create-table  { CREATE TABLE <qualified-name> '(' <create-part> ** ',' ')' }
+    rule ddl:alter-table   { ALTER TABLE <qualified-name> '(' <alter-part> ** ',' ')' }
+    rule ddl:drop-table    { DROP TABLE <qualified-name }
+    rule ddl:upsert        { UPSERT INTO <qualified-name> <field-list> VALUES <tuple> ** ',' }
+    rule ddl:delete        { DELETE FROM <qualified-name> WITH ID '(' <integer> ** ',' ')' }
+
+    rule create-part { <column-def> | <index-def> }
+    rule column-def { <name> <type> <unsigned>? <not-null>? <translator>? <default>? <primary-key>? [DEFAULT <value>]? <auto-index>? <relationship>? }
+    rule create-part:index { [UNIQUE]? INDEX '(' <index-part> ** ',' ')' }
+
+    rule index-part { <name> [ '(' <integer> ')' ]? } # do we have a use case for ASC/DESC?
+    rule index-def { [UNIQUE]? INDEX '(' <index-part> ** ',' ')' }
+
+    rule alter-part { ADD <column-def> | ADD <index-def> | DROP <index-def> | DROP <name> | CHANGE <name> TO <column-def> | RENAME TABLE <name> }
+
+    # PKEY = INTEGER UNSIGNED NOT NULL PRIMARY KEY
+    # ID = INTEGER UNSIGNED
+    # TIME = INTEGER UNSIGNED UNIXTIME
+    # PERCENT = DECIMAL(5,2) UNSIGNED PERCENT }
+    # MONEY = INTEGER DOLLARS
+    # ENUM(...) = SMALLINT UNSIGNED NOT NULL ENUM(...)
+    rule macro-type { PKEY | ID | TIME | PERCENT | MONEY | ENUM '(' <enum-option> ** ',' ')' }
+    rule scalar-type { INTEGER | SMALLINT | TINYINT | MEDIUMINT | BIGINT | [ '' | TINY | MEDIUM | LONG ][ BLOB | TEXT ] }
+    rule string-type { CHAR | VARCHAR | BINARY | VARBINARY }
+    rule type { <macro-type> | <scalar-type> | <string-type> '(' <integer> ')' | DECIMAL '(' <integer> ',' <integer> ')' }
+    rule auto-index { [UNIQUELY] INDEXED }
+    rule primary-key { PRIMARY KEY } # autoincrement implied
+    rule not-null { NOT NULL }
+    rule unsigned { UNSIGNED }
+    rule translator { DOLLARS | UNIXTIME | PERCENT | ENUM '(' <enum-option> ** ',' ')' }
+    rule enum-option { <name> [ DISPLAY <string> ]? [ ID <integer> ]? }
+    rule relationship { REFERENCES <double-qualified-name> [WITHOUT INDEX]? AS <name> REVERSE <name> }
+
+    rule field-list { '(' <name> ** ',' ')' }
+    rule  tuple { '(' <value> ** ',' ')' }
+    token value { <string> | <integer> | NULL }
+
+    token string        { "'" $<content>=[ [ <![']>+ | "''"  ]* ] "'" }
+    token quoted-name   { '"' $<content>=[ [ <!["]>+ | '""'  ]* ] '"' }
+    token integer       { -? [0-9]+ }
+    token name          { <ident> | <quoted-name> }
+    rule qualified-name { <name> '.' <name> }
 
 # Internal concepts
 
