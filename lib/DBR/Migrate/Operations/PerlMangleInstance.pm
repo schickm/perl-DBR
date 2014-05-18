@@ -4,9 +4,9 @@ use strict;
 use warnings;
 use parent 'DBR::Migrate::Operations::Logical';
 
-# has schema
+# has instance
 # has modify_tables
-# has reference_schemas
+# has reference_instances
 # has up_code
 # has down_code
 

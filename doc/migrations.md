@@ -52,6 +52,22 @@ There is a new table which holds migrations that are known to the system.  Each 
             contents LONGBLOB
     );
 
+# Internal concepts
+
+## Physical operation
+
+This is a small operation that directly references instances (whereas logical
+operations reference schemas) and generally corresponds to a single `INSERT`,
+`DELETE`, `CREATE`, `ALTER`, or `DROP` statement.  A logical operation is
+executed in two steps: first a plan is generated as a sequence of physical
+operations, then those operations are executed.  Most of the responsibility for
+reversibility and atomicity lies at the physical operation layer (for instance
+the `DROP` operation will fail if there are rows), however it is also necessary
+for the logical operations to ensure plan stability.  If the generated plan
+contains physical operations that remove the data required for the reversed
+logical operation to generate its plan, then the logical operation will not
+actually be reversible.  Beware.
+
 # Command reference
 
 ## load

@@ -2,7 +2,7 @@ package DBR::Migrate::Operations::ChangeTable;
 
 use strict;
 use warnings;
-use parent 'DBR::Migrate::Operations::Base';
+use parent 'DBR::Migrate::Operations::Logical';
 
 # this is a doozy, partly because of the need to combine alter tables for speed, and also because SQL doesn't let you just create a table without adding columns at the same time
 
