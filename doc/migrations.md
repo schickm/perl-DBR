@@ -113,6 +113,35 @@ contains physical operations that remove the data required for the reversed
 logical operation to generate its plan, then the logical operation will not
 actually be reversible.  Beware.
 
+## Foreign key handling
+
+DBR uses foreign key constraints opportunistically.  They aren't required for
+operation, and in some cases must be omitted.  A foreign key is created for a
+relationship if the underlying database is capable of supporting it without
+undue penalty; both sides of the relationship must be indexed, both instances
+must be co-located (running on the same database connection; SQLite does not
+allow foreign keys between databases on a single connection but we don't
+currently support shared connections on SQLite anyway), and both sides must
+have the same data type and size.  Foreign keys are created as these
+requirements are met and deleted as they are violated.  Precise behavior
+differs between (de)instantiation and normal migrations:
+
+* For normal migrations, we expect the database to pass through a sequence of
+  valid states, so the constraints are maintained throughout the process.
+  `ALTER` and `DROP` operations which require constraints to be removed are
+  automatically preceded with `ALTER` operations to remove them, and conversely
+  for `ALTER` and `CREATE`.  It may be necessary to remove a constraint for one
+  alter only, for instance if a table is being renamed or its primary key type
+  changed.  This will frequently cause multiple alteration cycles; for instance
+  logically adding a field and relation will generate two `ALTER` statements,
+  one to add the field and one to add the foreign key.  Since these statements
+  can be slow for large tables, we will investigate optimizations later.
+
+* Instantiation of schemas creates many tables in an order not compatible with
+  the foreign keys, so the foreign keys must be disabled during the process.
+  This will need to be revisited if we support a database later where foreign
+  key checking is mandatory.
+
 # Command reference
 
 ## load
@@ -132,3 +161,10 @@ actually be reversible.  Beware.
 ## squash
 ## bootstrap
 
+# Plan of attack
+
+1. Spec and implement scanner for indexes
+1. Spec and implement table prefix support
+1. Spec and implement physical operation layer
+1. Spec and implement logical operations
+1. Spec and implement the driver
