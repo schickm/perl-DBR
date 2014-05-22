@@ -38,6 +38,80 @@ sub quote { shift->{dbh}->quote(@_)  }
 sub quote_identifier { shift->{dbh}->quote_identifier(@_) }
 sub can_lock { 1 }
 
+# Default implementations of catalog query operators.
+# Since every DBD seems to implement this a bit differently, feel free to override in subclasses!
+
+# these four are meant to return something close to the DBI native format
+sub table_info { my ($self, $inst) = @_; return $self->{_table_info}{$inst->database||''} ||= $self->_table_info($inst) }
+sub primary_key_info { my ($self, $inst) = @_; return $self->{_primary_key_info}{$inst->database||''} ||= $self->_primary_key_info($inst) }
+sub column_info { my ($self, $inst) = @_; return $self->{_column_info}{$inst->database||''} ||= $self->_column_info($inst) }
+sub index_info { my ($self, $inst) = @_; return $self->{_index_info}{$inst->database||''} ||= $self->_index_info($inst) }
+
+sub _table_info {
+    my ($self, $db) = @_;
+    local $self->{dbh}->{RaiseError} = 1;
+    return [ grep { $_->{TABLE_TYPE} eq 'TABLE' } @{ $self->{dbh}->table_info('', $db->database)->fetchall_arrayref({}) } ];
+}
+
+sub _primary_key_info {
+    my ($self, $db) = @_;
+    local $self->{dbh}->{RaiseError} = 1;
+    return [ map {
+        @{ $self->{dbh}->primary_key_info(undef, $db->database, $_->{TABLE_NAME})->fetchall_arrayref({}) }
+    } @{ $self->table_info($db) } ];
+}
+
+sub _column_info {
+    my ($self, $db) = @_;
+    local $self->{dbh}->{RaiseError} = 1;
+    return [ map {
+        @{ $self->{dbh}->column_info(undef, $db->database, $_->{TABLE_NAME}, undef)->fetchall_arrayref({}) }
+    } @{ $self->table_info($db) } ];
+}
+
+sub _index_info { [] } # not supported portably in DBI
+
+sub schema_info {
+    my ($self, $inst) = @_;
+
+    my %out;
+    my %by_orig;
+    my $pfx = $inst->prefix;
+
+    for my $t (@{ $self->table_info($inst) }) {
+        my $name = $t->{TABLE_NAME};
+        $name =~ s/^\Q$pfx// or next;
+
+        $out{$name} = $by_orig{$t->{TABLE_NAME}} = { columns => {}, indexes => {} };
+    }
+
+    for my $c (@{ $self->column_info($inst) }) {
+        my $t = $by_orig{$c->{TABLE_NAME}} or next;
+
+        $t->{columns}{$c->{COLUMN_NAME}} = {
+            type => $c->{TYPE_NAME},
+            max_value => $c->{COLUMN_SIZE},
+            decimal_digits => $c->{DECIMAL_DIGITS},
+            is_nullable => $c->{NULLABLE} ? 1 : 0,
+            is_signed   => $c->{UNSIGNED} ? 0 : 1, # not DBI standard but set by a subclass
+        };
+    }
+
+    for my $p (@{ $self->primary_key_info($inst) }) {
+        my $t = $by_orig{$p->{TABLE_NAME}} or next;
+        my $c = $t->{columns}{$p->{COLUMN_NAME}} or next;
+        $c->{is_pkey} = 1;
+    }
+
+    for my $i (@{ $self->index_info($inst) }) {
+        my $t = $by_orig{$i->{TABLE_NAME}} or next;
+        my $io = $t->{indexes}{$i->{INDEX_NAME}} ||= { unique => $i->{NON_UNIQUE}?0:1, parts => [] };
+        push @{$io->{parts}}, { column => $i->{COLUMN_NAME}, prefix_length => $i->{SUB_PART} };
+    }
+
+    return \%out;
+}
+
 sub ping {
       my $self = shift;
 

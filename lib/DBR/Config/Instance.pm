@@ -283,6 +283,8 @@ sub getconn{
       return $CONCACHE{ $dedup } = $conn;
 }
 
+sub phys_schema { $_[0]->getconn->schema_info($_[0]) }
+
 sub _new_connection{
       my $self = shift;
 

@@ -42,4 +42,18 @@ sub quote {
     ("\x{100}" x 0) . $self->{dbh}->quote(@_);
 }
 
+sub _index_info {
+    my ($self, $inst) = @_;
+
+    local $self->{dbh}->{RaiseError} = 1;
+    return $self->{dbh}->selectall_arrayref(q{SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SUB_PART FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = ? AND INDEX_NAME <> 'PRIMARY' ORDER BY INDEX_NAME, SEQ_IN_INDEX }, { Slice => { } }, $inst->database);
+}
+
+sub _column_info {
+    my $self = shift;
+    my $list = $self->SUPER::_column_info(@_);
+    map { $_->{UNSIGNED} = 1 if $_->{mysql_type_name} =~ / unsigned/i } @$list;
+    $list;
+}
+
 1;
