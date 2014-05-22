@@ -39,7 +39,9 @@ sub connect_ok {
 
 sub setup_schema_ok{
     my $testid = shift;
-    my $dbr = DBR::Sandbox->provision( schema => $testid, quiet => 1 );
+    my %params = @_;
+
+    my $dbr = DBR::Sandbox->provision( schema => $testid, version => $params{version} || 1, quiet => 1 );
     
     Test::More::ok( $dbr, 'Setup Schema' );
     return $dbr;

@@ -95,7 +95,7 @@ sub _get_bootstrap_schema {
     my ($package, %params) = @_;
 
     my $MIN_VER = 1;
-    my $MAX_VER = 1;
+    my $MAX_VER = 2;
 
     # Since positive values are used for 'user' objects, our meta-meta-catalog uses negative IDs
     my $ver = int($params{version});
@@ -116,73 +116,97 @@ sub _build_bootstrap_schema {
     my ($package, $ver) = @_;
 
     my @COL_INFO = qw{
-        1  dbr_schemas        schema_id        INTEGER:UN:NN
-        1  dbr_schemas        handle           VARCHAR:50
-        1  dbr_schemas        display_name     VARCHAR:50
+        1:2  dbr_schemas        schema_id        INTEGER:UN:NN
+        1:2  dbr_schemas        handle           VARCHAR:50
+        1:2  dbr_schemas        display_name     VARCHAR:50
+        2    dbr_schemas        owned_by_migration  BOOLEAN:NN:DEF=0
 
-        1  dbr_instances      instance_id      INTEGER:UN:NN
-        1  dbr_instances      schema_id        INTEGER:UN:NN
-        1  dbr_instances      handle           VARCHAR:50:NN
-        1  dbr_instances      class            VARCHAR:50:NN
-        1  dbr_instances      tag              VARCHAR:250
-        1  dbr_instances      dbname           VARCHAR:250
-        1  dbr_instances      username         VARCHAR:250
-        1  dbr_instances      password         VARCHAR:250
-        1  dbr_instances      host             VARCHAR:250
-        1  dbr_instances      dbfile           VARCHAR:250
-        1  dbr_instances      module           VARCHAR:50:NN
-        1  dbr_instances      readonly         BOOLEAN
+        1:2  dbr_instances      instance_id      INTEGER:UN:NN
+        1:2  dbr_instances      schema_id        INTEGER:UN:NN
+        1:2  dbr_instances      handle           VARCHAR:50:NN
+        1:2  dbr_instances      class            VARCHAR:50:NN
+        1:2  dbr_instances      tag              VARCHAR:250
+        1:2  dbr_instances      dbname           VARCHAR:250
+        2    dbr_instances      prefix           VARCHAR:250
+        1:2  dbr_instances      username         VARCHAR:250
+        1:2  dbr_instances      password         VARCHAR:250
+        1:2  dbr_instances      host             VARCHAR:250
+        1:2  dbr_instances      dbfile           VARCHAR:250
+        1:2  dbr_instances      module           VARCHAR:50:NN
+        1:2  dbr_instances      readonly         BOOLEAN
 
-        1  dbr_tables         table_id         INTEGER:UN:NN
-        1  dbr_tables         schema_id        INTEGER:UN:NN
-        1  dbr_tables         name             VARCHAR:250:NN
-        1  dbr_tables         display_name     VARCHAR:250
-        1  dbr_tables         is_cachable      BOOLEAN
+        1:2  dbr_tables         table_id         INTEGER:UN:NN
+        1:2  dbr_tables         schema_id        INTEGER:UN:NN
+        1:2  dbr_tables         name             VARCHAR:250:NN
+        1:2  dbr_tables         display_name     VARCHAR:250
+        1:2  dbr_tables         is_cachable      BOOLEAN
 
-        1  dbr_fields         field_id         INTEGER:UN:NN
-        1  dbr_fields         table_id         INTEGER:UN:NN
-        1  dbr_fields         name             VARCHAR:250:NN
-        1  dbr_fields         data_type        TINYINT:UN:NN
-        1  dbr_fields         is_nullable      BOOLEAN
-        1  dbr_fields         is_signed        BOOLEAN
-        1  dbr_fields         max_value        INTEGER:UN:NN
-        1  dbr_fields         display_name     VARCHAR:250
-        1  dbr_fields         is_pkey          BOOLEAN:DEF=0
-        1  dbr_fields         index_type       TINYINT
-        1  dbr_fields         trans_id         TINYINT:UN
-        1  dbr_fields         regex            VARCHAR:250
-        1  dbr_fields         default_val      VARCHAR:250
+        1:2  dbr_fields         field_id         INTEGER:UN:NN
+        1:2  dbr_fields         table_id         INTEGER:UN:NN
+        1:2  dbr_fields         name             VARCHAR:250:NN
+        1:2  dbr_fields         data_type        TINYINT:UN:NN
+        1:2  dbr_fields         is_nullable      BOOLEAN
+        1:2  dbr_fields         is_signed        BOOLEAN
+        1:2  dbr_fields         max_value        INTEGER:UN:NN
+        2    dbr_fields         decimal_precision INTEGER
+        1:2  dbr_fields         display_name     VARCHAR:250
+        1:2  dbr_fields         is_pkey          BOOLEAN:DEF=0
+        1:2  dbr_fields         index_type       TINYINT
+        1:2  dbr_fields         trans_id         TINYINT:UN
+        1:2  dbr_fields         regex            VARCHAR:250
+        1:2  dbr_fields         default_val      VARCHAR:250
 
-        1  dbr_relationships  relationship_id  INTEGER:UN:NN
-        1  dbr_relationships  from_name        VARCHAR:45:NN
-        1  dbr_relationships  from_table_id    INTEGER:UN:NN
-        1  dbr_relationships  from_field_id    INTEGER:UN:NN
-        1  dbr_relationships  to_name          VARCHAR:45:NN
-        1  dbr_relationships  to_table_id      INTEGER:UN:NN
-        1  dbr_relationships  to_field_id      INTEGER:UN:NN
-        1  dbr_relationships  type             TINYINT:UN:NN
+        2    indexes            id               INTEGER:UN:NN
+        2    indexes            field_id         INTEGER:UN:NN
+        2    indexes            refinement_of_id INTEGER:UN
+        2    indexes            prefix_length    INTEGER
+        2    indexes            is_unique        BOOLEAN:NN:DEF=0
 
-        1  cache_scopes       scope_id         INTEGER:UN:NN
-        1  cache_scopes       digest           CHAR:32:NN
-        1  cache_fielduse     row_id           INTEGER:UN:NN
-        1  cache_fielduse     scope_id         INTEGER:UN:NN
-        1  cache_fielduse     field_id         INTEGER:UN:NN
+        2    managed_rows       id               INTEGER:UN:NN
+        2    managed_rows       table_id         INTEGER:UN:NN
 
-        1  enum               enum_id          INTEGER:UN:NN
-        1  enum               handle           VARCHAR:250
-        1  enum               name             VARCHAR:250
-        1  enum               override_id      INTEGER:UN
+        2    managed_values     id               INTEGER:UN:NN
+        2    managed_values     row_id           INTEGER:UN:NN
+        2    managed_values     field_id         INTEGER:UN:NN
+        2    managed_values     value            VARCHAR:255
 
-        1  enum_legacy_map    row_id           INTEGER:UN:NN
-        1  enum_legacy_map    context          VARCHAR:250
-        1  enum_legacy_map    field            VARCHAR:250
-        1  enum_legacy_map    enum_id          INTEGER:UN:NN
-        1  enum_legacy_map    sortval          INTEGER
+        2    migrations         id               INTEGER:UN:NN
+        2    migrations         name             VARCHAR:255:NN
+        2    migrations         active           BOOLEAN:NN:DEF=0
+        2    migrations         pinned           BOOLEAN:NN:DEF=0
+        2    migrations         crashed          BOOLEAN:NN:DEF=0
+        2    migrations         content          LONGBLOB:NN
 
-        1  enum_map           row_id           INTEGER:UN:NN
-        1  enum_map           field_id         INTEGER:UN:NN
-        1  enum_map           enum_id          INTEGER:UN:NN
-        1  enum_map           sortval          INTEGER
+        1:2  dbr_relationships  relationship_id  INTEGER:UN:NN
+        1:2  dbr_relationships  from_name        VARCHAR:45:NN
+        1:2  dbr_relationships  from_table_id    INTEGER:UN:NN
+        1:2  dbr_relationships  from_field_id    INTEGER:UN:NN
+        1:2  dbr_relationships  to_name          VARCHAR:45:NN
+        1:2  dbr_relationships  to_table_id      INTEGER:UN:NN
+        1:2  dbr_relationships  to_field_id      INTEGER:UN:NN
+        1:2  dbr_relationships  type             TINYINT:UN:NN
+
+        1:2  cache_scopes       scope_id         INTEGER:UN:NN
+        1:2  cache_scopes       digest           CHAR:32:NN
+        1:2  cache_fielduse     row_id           INTEGER:UN:NN
+        1:2  cache_fielduse     scope_id         INTEGER:UN:NN
+        1:2  cache_fielduse     field_id         INTEGER:UN:NN
+
+        1:2  enum               enum_id          INTEGER:UN:NN
+        1:2  enum               handle           VARCHAR:250
+        1:2  enum               name             VARCHAR:250
+        1:2  enum               override_id      INTEGER:UN
+
+        1:2  enum_legacy_map    row_id           INTEGER:UN:NN
+        1:2  enum_legacy_map    context          VARCHAR:250
+        1:2  enum_legacy_map    field            VARCHAR:250
+        1:2  enum_legacy_map    enum_id          INTEGER:UN:NN
+        1:2  enum_legacy_map    sortval          INTEGER
+
+        1:2  enum_map           row_id           INTEGER:UN:NN
+        1:2  enum_map           field_id         INTEGER:UN:NN
+        1:2  enum_map           enum_id          INTEGER:UN:NN
+        1:2  enum_map           sortval          INTEGER
     };
 
     my @REL_INFO = qw{
@@ -197,6 +221,11 @@ sub _build_bootstrap_schema {
         enum_legacy_map.enum_id          legacy_maps         enum        enum.enum_id
         enum_map.field_id                enum_maps           field       dbr_fields.field_id
         enum_map.enum_id                 field_maps          enum        enum.enum_id
+        managed_values.row_id            values              row         managed_rows.id
+        managed_values.field_id          managed_values      field       dbr_fields.field_id
+        managed_rows.table_id            managed_rows        table       dbr_tables.table_id
+        indexes.field_id                 indexes             field       dbr_fields.field_id
+        indexes.refinement_of_id         refinements         refinement_of  indexes.id
     };
 
     my (@fake_schemas, @fake_tables, @fake_fields, @fake_relationships);

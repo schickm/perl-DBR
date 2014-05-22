@@ -14,6 +14,7 @@ CREATE TABLE dbr_instances (
   class varchar(50) NOT NULL,
   tag varchar(250),
   dbname varchar(250),
+  prefix varchar(250),
   username varchar(250),
   password varchar(250),
   host varchar(250),
@@ -47,7 +48,7 @@ CREATE TABLE dbr_fields (
 );
 
 -- this representation uses only one table, and naturally captures the fact that an index is also an index on a prefix of the columns
--- no support for DESC indexes.  does anyone use those?
+-- no support for DESC indexes.  does anyone use those? ;
 CREATE TABLE indexes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   field_id int(10) NOT NULL,
@@ -56,7 +57,7 @@ CREATE TABLE indexes (
   is_unique tinyint(1) NOT NULL
 );
 
--- don't store foreign key info, because we create foreign keys whenever we can (need a relationship, two colocated instances, and indexes on both tables)
+-- don't store foreign key info, because we create foreign keys whenever we can (need a relationship, two colocated instances, and indexes on both tables) ;
 
 CREATE TABLE managed_rows (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
