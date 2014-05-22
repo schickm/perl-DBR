@@ -125,12 +125,12 @@ sub load_from_db{
       my $parent = $params{parent_inst} || return $self->_error('parent_inst is required');
       my $dbh = $parent->connect || return $self->_error("Failed to connect to (@{[$parent->handle]} @{[$parent->class]})");
       my $loaded = $INSTANCES_BY_GUID{ $parent->{guid} }{ loaded_instances } ||= [];
-
       return $self->_error('Failed to select instances') unless
 	my $instrows = $dbh->select(
 				    -table => 'dbr_instances',
                                     -where  => (@$loaded ? { instance_id => [ "d!", @$loaded ] } : undef),
-				    -fields => 'instance_id schema_id class dbname username password host dbfile module handle readonly tag'
+				    -fields => 'instance_id schema_id class dbname username password host dbfile module handle readonly tag' .
+                                        ( $parent->meta_version && $parent->meta_version >= 2 ? ' prefix' : '' )
 				   );
 
       my @instances;
@@ -169,6 +169,8 @@ sub register { # basically the same as a new
 		    hostname    => $spec->{hostname} || $spec->{host},
 		    user        => $spec->{username} || $spec->{user},
 		    dbfile      => $spec->{dbfile},
+                    meta_version=> $spec->{meta_version} || 1,
+                    prefix      => $spec->{prefix} || '',
 		    tag         => $spec->{tag} || '',
 		    password    => $spec->{password},
 		    class       => $spec->{class}       || 'master', # default to master
@@ -308,8 +310,10 @@ sub tag           { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{tag}    }
 sub guid          { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{guid}     }
 sub module        { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{module}   }
 sub database      { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{database}      }
+sub prefix        { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{prefix}      }
 sub dbr_bootstrap { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{dbr_bootstrap} }
 sub schema_id     { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{schema_id} }
+sub meta_version  { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{meta_version} }
 sub name          { return $_[0]->handle . ' ' . $_[0]->class }
 sub _fixup_schema_id {
     my ($self, $schema_id) = @_;
