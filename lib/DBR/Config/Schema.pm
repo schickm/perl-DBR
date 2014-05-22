@@ -148,7 +148,7 @@ sub _build_bootstrap_schema {
         1:2  dbr_fields         is_nullable      BOOLEAN
         1:2  dbr_fields         is_signed        BOOLEAN
         1:2  dbr_fields         max_value        INTEGER:UN:NN
-        2    dbr_fields         decimal_precision INTEGER
+        2    dbr_fields         decimal_digits   INTEGER
         1:2  dbr_fields         display_name     VARCHAR:250
         1:2  dbr_fields         is_pkey          BOOLEAN:DEF=0
         1:2  dbr_fields         index_type       TINYINT

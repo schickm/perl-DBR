@@ -179,11 +179,12 @@ sub update_fields{
       my $pkey_map = shift;
 
       my $dbh = $self->{conf_instance}->connect || die "failed to connect to config db";
+      my $v2  = $self->{conf_instance}->meta_version >= 2;
 
       return $self->_error('failed to select from dbr_fields') unless
  	my $records = $dbh->select(
 				   -table  => 'dbr_fields',
-				   -fields => 'field_id table_id name data_type is_nullable is_signed max_value is_pkey',
+				   -fields => 'field_id table_id name data_type is_nullable is_signed max_value is_pkey' . ($v2 ? ' decimal_digits' : ''),
 				   -where  => {
 					       table_id  => ['d',$table_id]
 					      }
@@ -196,6 +197,7 @@ sub update_fields{
  	    my $name = $field->{'COLUMN_NAME'} or return $self->_error('No COLUMN_NAME is present');
 	    my $type = $field->{'TYPE_NAME'}   or return $self->_error('No TYPE_NAME is present'  );
 	    my $size = $field->{'COLUMN_SIZE'};
+            my $digits = $field->{'DECIMAL_DIGITS'};
 
 	    my $nullable = $field->{'NULLABLE'};
 	    return $self->_error('No NULLABLE is present'  ) unless defined($nullable);
@@ -219,7 +221,9 @@ sub update_fields{
  		       is_signed   => ['d',  $is_signed      ],
  		       data_type   => ['d',  $typeid         ],
  		       max_value   => ['d',  $size || 0      ],
+                       decimal_digits => ['d', $digits || 0  ],
  		      };
+            delete $ref->{decimal_digits} unless $v2;
 
 	    if(defined($pkey)){
 		  $ref->{is_pkey} = ['d',  $pkey ? 1:0  ],

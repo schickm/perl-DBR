@@ -38,7 +38,7 @@ CREATE TABLE dbr_fields (
   is_nullable tinyint(1) default '0',
   is_signed tinyint(1) default '0',
   max_value int(10)  NOT NULL,
-  decimal_precision int(10) NULL, -- needed for reexpressing DECIMAL(5,2) et al
+  decimal_digits int(10) NULL, -- needed for reexpressing DECIMAL(5,2) et al
   display_name varchar(250) default NULL,
   is_pkey tinyint(1) default '0',
   index_type tinyint(1) default NULL,
