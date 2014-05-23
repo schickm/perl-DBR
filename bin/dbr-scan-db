@@ -27,6 +27,7 @@ my $logger = new DBR::Util::Logger(-logpath => '/tmp/dbr_scan.log', -logLevel =>
 my $dbr    = new DBR(
 		     -logger => $logger,
 		     -conf   => $conffile,
+                     -use_exceptions => 1,
 		    );
 
 my $conf_instance = DBR::Config::Instance->lookup( session => $dbr->session, handle => $confdb ) or die "No config found for confdb $confdb";

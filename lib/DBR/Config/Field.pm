@@ -55,8 +55,8 @@ my %datatypes = (
 		 mediumint => { id => 3, numeric => 1, bits => 24},
 		 smallint  => { id => 4, numeric => 1, bits => 16},
 		 tinyint   => { id => 5, numeric => 1, bits => 8},
-		 bool      => { id => 6, numeric => 1, bits => 1},
-		 boolean   => { id => 6, numeric => 1, bits => 1},
+		 bool      => { id => 6, numeric => 1, bits => 1, force_un => 1},
+		 boolean   => { id => 6, numeric => 1, bits => 1, force_un => 1},
 		 float     => { id => 7, numeric => 1, bits => 'NA'},
 		 double    => { id => 8, numeric => 1, bits => 'NA'},
 		 varchar   => { id => 9 },
@@ -163,7 +163,7 @@ sub _gen_valcheck{ # Intentionally Non-oo
 	    if($dt->{bits} ne 'NA'){ # can't really range check floats and such things
 		  my ($min,$max) = (0, 2 ** $dt->{bits});
 
-		  if($fieldref->[C_is_signed]){  $max /= 2; $min = 0 - $max }
+		  if($fieldref->[C_is_signed] && !$dt->{force_un}){  $max /= 2; $min = 0 - $max }
 		  push @code, "\$v >= $min", '$v <= ' . ($max - 1);
 	    }
       }else{

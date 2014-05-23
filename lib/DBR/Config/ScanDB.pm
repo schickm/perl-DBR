@@ -32,23 +32,19 @@ sub new {
 }
 
 sub scan{
-      my $self = shift;
-      my %params = @_; 
+    my $self = shift;
+    my %params = @_; 
 
-      my $dbh = $self->{conf_instance}->connect || die "failed to connect to config db";
-      $dbh->begin;
+    my $dbh = $self->{conf_instance}->connect || die "failed to connect to config db";
+    $dbh->begin;
 
-      my $tables = $self->scan_tables() || die "failed to scan tables";
-      my $pkeys = $self->scan_pkeys(); # || die "failed to scan primary keys";
+    my $sch_info = $self->{scan_instance}->phys_schema;
 
-      foreach my $table (@{$tables}){
-            print "Scanning $table\n" if $params{pretty};
-            
-       	    my $fields = $self->scan_fields($table) or return $self->_error( "failed to describe table" );
-            my $pkey = $pkeys ? $pkeys->{$table} : $self->scan_pkeys( $table );
+    foreach my $table (keys %$sch_info) {
+        print "Updating $table\n" if $params{pretty};
 
-            $self->update_table($fields,$table,$pkey) or return $self->_error("failed to update table");
-      }
+        $self->update_table($table, $sch_info->{$table});
+    }
 
       $dbh->commit;
 
@@ -62,214 +58,42 @@ sub scan{
       return 1;
 }
 
-
-sub scan_pkeys {
-      my $self = shift;
-      my $table = shift;  # undef for all
-      #print "SCAN_PKEYS called with table=[$table]\n";
-
-      my $dbh = $self->{scan_instance}->connect('dbh') || die "failed to connect to scanned db";
-
-      my $sth;
-      local $dbh->{PrintError} = 0;
-      local $^W = 0;
-      eval { $sth= $dbh->primary_key_info(undef, $self->{scan_instance}->database, $table); };
-      return $self->_error('failed call to primary_key_info') unless $sth;
-      
-      my %map = ();
-      while (my $row = $sth->fetchrow_hashref()) {
-            next unless $row->{PK_NAME} eq 'PRIMARY KEY';
-	    my $table = $row->{TABLE_NAME} or return $self->_error('no TABLE_NAME!');
-	    my $field = $row->{COLUMN_NAME} or return $self->_error('no COLUMN_NAME!');
-            $field =~ s/"//g; # DBD::SQLite idiocy returns quoted pkeys
-            $map{$table}->{$field} = 1;
-      }
-
-      $sth->finish();
-
-      return \%map;
-}
-
-sub scan_tables{
-      my $self = shift;
-      my $dbh = $self->{scan_instance}->connect('dbh') || die "failed to connect to scanned db";
-
-      return $self->_error('failed call to table_info') unless
-	my $sth = $dbh->table_info( '', $self->{scan_instance}->database );
-
-      my @tables;
-      while (my $row = $sth->fetchrow_hashref()) {
-	    my $name = $row->{TABLE_NAME} or return $self->_error('Table entry has no name!');
-
-	    next if ($name eq 'sqlite_sequence'); # Ugly
-
-	    if($row->{TABLE_TYPE} eq 'TABLE'){
-		  push @tables, $name;
-	    }
-      }
-
-      $sth->finish();
-
-      return \@tables;
-}
-
-sub scan_fields{
-      my $self = shift;
-      my $table = shift;
-
-      my $dbh = $self->{scan_instance}->connect('dbh') || die "failed to connect to scanned db";
-
-      return $self->_error('failed call to column_info') unless
-	my $sth = $dbh->column_info( undef, $self->{scan_instance}->database , $table, undef );
-
-      my @rows;
-      while (my $row = $sth->fetchrow_hashref()) {
-	    push @rows, $row;
-      }
-
-      $sth->finish();
-
-      return \@rows;
-}
-
 sub update_table{
-      my $self   = shift;
-      my $fields = shift;
-      my $name   = shift;
-      my $pkey   = shift;
+    my ($self, $name, $info) = @_;
 
-      my $dbh = $self->{conf_instance}->connect || die "failed to connect to config db";
+    my $dbh = $self->{conf_instance}->connect || die "failed to connect to config db";
 
-      return $self->_error('failed to select from dbr_tables') unless
- 	my $tables = $dbh->select(
- 				  -table  => 'dbr_tables',
- 				  -fields => 'table_id schema_id name',
- 				  -where  => {
- 					      schema_id => ['d',$self->{schema_id}],
- 					      name      => $name,
- 					     }
- 				 );
+    my $table_id = $dbh->dbr_tables->where( schema_id => $self->{schema_id}, name => $name )->next->table_id;
+    $table_id ||= $dbh->dbr_tables->insert( schema_id => $self->{schema_id}, name => $name );
 
-      my $table = $tables->[0];
+    my $fieldmap = $dbh->dbr_fields->where( table_id => $table_id )->hashmap_single('name');
 
-      my $table_id;
-      if($table){ # update
- 	    $table_id = $table->{table_id};
-      }else{
- 	    return $self->_error('failed to insert into dbr_tables') unless
- 	      $table_id = $dbh->insert(
- 				       -table  => 'dbr_tables',
- 				       -fields => {
- 						   schema_id => ['d',$self->{schema_id}],
- 						   name      => $name,
- 						  }
- 				      );
-      }
+    foreach my $name (sort keys %{$info->{columns}}) {
+        my $field = $info->{columns}{$name};
 
-      $self->update_fields($fields,$table_id,$pkey) or return $self->_error('Failed to update fields');
+        my $type = $field->{type};
+        ($type) = split ' ', $type;
+        my $typeid = DBR::Config::Field->get_type_id($type) or die( "Invalid type '$type'" );
+        my $ref = {
+            is_nullable => $field->{is_nullable},
+            is_signed   => $field->{is_signed},
+            is_pkey     => $field->{is_pkey} || 0,
+            data_type   => $typeid,
+            max_value   => $field->{max_value} || 0,
+            $self->{conf_instance}->meta_version >= 2 ? (
+                decimal_digits => $field->{decimal_digits} || 0,
+            ):(),
+        };
 
-      return 1;
-}
+        my $record = delete $fieldmap->{$name};
+        if ($record) {
+            $record->set( %$ref );
+        } else {
+            $dbh->dbr_fields->insert( table_id => $table_id, name => $name, %$ref );
+        }
+    }
 
-
-sub update_fields{
-      my $self = shift;
-      my $fields = shift;
-      my $table_id = shift;
-      my $pkey_map = shift;
-
-      my $dbh = $self->{conf_instance}->connect || die "failed to connect to config db";
-      my $v2  = $self->{conf_instance}->meta_version >= 2;
-
-      return $self->_error('failed to select from dbr_fields') unless
- 	my $records = $dbh->select(
-				   -table  => 'dbr_fields',
-				   -fields => 'field_id table_id name data_type is_nullable is_signed max_value is_pkey' . ($v2 ? ' decimal_digits' : ''),
-				   -where  => {
-					       table_id  => ['d',$table_id]
-					      }
-				  );
-
-      my %fieldmap;
-      map {$fieldmap{$_->{name}} = $_} @{$records};
-
-      foreach my $field (@{$fields}) {
- 	    my $name = $field->{'COLUMN_NAME'} or return $self->_error('No COLUMN_NAME is present');
-	    my $type = $field->{'TYPE_NAME'}   or return $self->_error('No TYPE_NAME is present'  );
-	    my $size = $field->{'COLUMN_SIZE'};
-            my $digits = $field->{'DECIMAL_DIGITS'};
-
-	    my $nullable = $field->{'NULLABLE'};
-	    return $self->_error('No NULLABLE is present'  ) unless defined($nullable);
-
-	    my $pkey = $field->{'mysql_is_pri_key'} || $pkey_map->{$name};
-	    my $extra = $field->{'mysql_type_name'};
-
-	    my $is_signed = 0;
-	    if(defined $extra){
-		  $is_signed = ($extra =~ / unsigned/i)?0:1;
-		  $is_signed = 0 if $type =~ /unsigned/i; #Lame... SQLite sometimes returns the data type as 'int unsigned'
-	    }
-	    $type =~ /^\s+|\s+$/g;
-	    ($type) = split (/\s+/,$type);
-	    my $typeid = DBR::Config::Field->get_type_id($type) or die( "Invalid type '$type'" );
-
- 	    my $record = $fieldmap{$name};
-
- 	    my $ref = {
- 		       is_nullable => ['d',  $nullable ? 1:0 ],
- 		       is_signed   => ['d',  $is_signed      ],
- 		       data_type   => ['d',  $typeid         ],
- 		       max_value   => ['d',  $size || 0      ],
-                       decimal_digits => ['d', $digits || 0  ],
- 		      };
-            delete $ref->{decimal_digits} unless $v2;
-
-	    if(defined($pkey)){
-		  $ref->{is_pkey} = ['d',  $pkey ? 1:0  ],
-	    }
-
- 	    if ($record) {	# update
-                  my %diff;
-                  foreach my $key (keys %$ref){
-                        my $val = $ref->{$key};
-                        $val = $val->[1] if ref($val) eq 'ARRAY';
-                        $diff{$key} = $ref->{$key} if $val ne $record->{$key};
-                  }
-                  if(%diff){
-                        return $self->_error('failed to insert into dbr_tables') unless
-                          $dbh->update(
-                                       -table  => 'dbr_fields',
-                                       -fields => \%diff,
-                                       -where  => { field_id => ['d',$record->{field_id}] },
-                                      );
-                  }
- 	    } else {
- 		  $ref->{name}     = $name;
- 		  $ref->{table_id} = ['d', $table_id ];
-
- 		  return $self->_error('failed to insert into dbr_tables') unless
- 		    my $field_id = $dbh->insert(
- 						-table  => 'dbr_fields',
- 						-fields => $ref,
- 					       );
- 	    }
-
- 	    delete $fieldmap{$name};
-
-      }
-
-      foreach my $name (keys %fieldmap) {
- 	    my $record = $fieldmap{$name};
-
- 	    return $self->_error('failed to delete from dbr_tables') unless
- 	      $dbh->delete(
- 			   -table  => 'dbr_fields',
- 			   -where  => { field_id => ['d',$record->{field_id}] },
- 			  );
-      }
-
-      return 1;
+    map { $_->delete } values %$fieldmap;
 }
 
 1;

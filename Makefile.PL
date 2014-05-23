@@ -21,7 +21,7 @@ WriteMakefile(
 				  $has_mysql ? (# If we have mysql, it needs to be a good version
 				    'DBD::mysql' => '4.002',
 				  ) : (),
-				  'DBD::SQLite'        => '1.20',
+				  'DBD::SQLite'        => '1.31', # primary_key_info fix
 				  'DBI'                => 0,
 				  'Digest::MD5'        => 0,
 				  'File::Path'         => '1.08',
