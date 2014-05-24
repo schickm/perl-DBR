@@ -17,7 +17,7 @@ CREATE TABLE TBL(def) (
 );
 
 CREATE UNIQUE INDEX def_de ON TBL(def) (d,e);
-CREATE INDEX def_gf ON TBL(def) (g, f);
+CREATE INDEX def_gf ON TBL(def) (g, f /*! (8) */);
 CREATE INDEX def_gh ON TBL(def) (g, h);
 CREATE INDEX def_gde ON TBL(def) (g, d, e);
 

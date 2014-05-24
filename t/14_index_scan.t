@@ -22,13 +22,14 @@ ok ($ix_abc_a, 'found index on abc(a)');
 my $ix_abc_b = $dbh->indexes->where( 'field.name' => 'b', refinement_of_id => undef, prefix_length => undef, is_unique => 1 )->next;
 ok ($ix_abc_b, 'found index on abc(b)');
 
+my $My = $dbr->get_instance('indextest')->module eq 'Mysql';
 my $ix_def_d   = $dbh->indexes->where( 'field.name' => 'd', refinement_of_id => undef, prefix_length => undef, is_unique => 0 )->next;
 ok $ix_def_d, 'found prefix index on def(d)';
 my $ix_def_g   = $dbh->indexes->where( 'field.name' => 'g', refinement_of_id => undef, prefix_length => undef, is_unique => 0 )->next;
 ok $ix_def_g, 'found prefix index on def(g)';
 my $ix_def_de  = $dbh->indexes->where( 'field.name' => 'e', refinement_of_id => $ix_def_d->id, prefix_length => undef, is_unique => 1 )->next;
 ok $ix_def_de, 'found unique index on def(de)';
-my $ix_def_gf  = $dbh->indexes->where( 'field.name' => 'f', refinement_of_id => $ix_def_g->id, prefix_length => undef, is_unique => 0 )->next;
+my $ix_def_gf  = $dbh->indexes->where( 'field.name' => 'f', refinement_of_id => $ix_def_g->id, prefix_length => $My ? 8 : undef, is_unique => 0 )->next;
 ok $ix_def_gf, 'found index on def(g,f(undef))';
 my $ix_def_gh  = $dbh->indexes->where( 'field.name' => 'h', refinement_of_id => $ix_def_g->id, prefix_length => undef, is_unique => 0 )->next;
 ok $ix_def_gh, 'found index on def(g,h(undef))';
