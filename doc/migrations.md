@@ -260,8 +260,6 @@ differs between (de)instantiation and normal migrations:
 
 # Plan of attack
 
-1. Spec and implement scanner for indexes
-1. Spec and implement table prefix support
 1. Spec and implement physical operation layer
 1. Spec and implement logical operations
 1. Spec and implement the driver
