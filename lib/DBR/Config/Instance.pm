@@ -7,39 +7,15 @@ package DBR::Config::Instance;
 
 use strict;
 use DBI;
-use base 'DBR::Common';
+use base 'DBR::Config::Instance::Common';
 use DBR::Config::Schema;
 use Carp;
 
 my $GUID = 1;
 
-#here is a list of the currently supported databases and their connect string formats
-my %connectstrings = (
-		      Mysql  => 'dbi:mysql:host=-hostname-;mysql_enable_utf8=1',
-		      SQLite => 'dbi:SQLite:dbname=-dbfile-',
-		      Pg     => 'dbi:Pg:dbname=-database-;host=-hostname-',
-		     );
-
-my %CONCACHE;
 my %INSTANCE_MAP;
 my %SCHEMA_MAP;
 my %INSTANCES_BY_GUID;
-
-
-sub flush_all_handles {
-      # can be run with or without an object
-      my $cache = \%CONCACHE;
-
-      foreach my $cachekey (keys %$cache){
-	    my $conn = $cache->{ $cachekey };
-	    if($conn){
-		  $conn->disconnect();
-		  delete $cache->{ $cachekey };
-	    }
-      }
-
-      return 1;
-}
 
 sub lookup{
       my $package = shift;
@@ -109,7 +85,7 @@ sub is_colocated {
     my $config1 = $INSTANCES_BY_GUID{$guid1};
     my $config2 = $INSTANCES_BY_GUID{$guid2};
 
-    return $config1 && $config2 && _connectid($config1) eq _connectid($config2);
+    return $config1 && $config2 && $config1->{connectid} eq $config2->{connectid};
 }
 
 sub load_from_db{
@@ -178,29 +154,14 @@ sub register { # basically the same as a new
 		    schema_id   => $spec->{schema_id}   || '',
 		    allowquery  => $spec->{allowquery}  || 0,
 		    readonly    => $spec->{readonly}    || 0,
+                    dbr_bootstrap => $spec->{dbr_bootstrap} ? 1 : 0,
 		   };
 
       return $self->_error( 'module/type parameter is required'     ) unless $config->{module};
       return $self->_error( 'handle/name parameter is required'     ) unless $config->{handle};
 
-      $config->{connectstring} = $connectstrings{$config->{module}} || return $self->_error("module '$config->{module}' is not a supported database type");
+      $self->_inflate($config) or return;
 
-      my $connclass = 'DBR::Misc::Connection::' . $config->{module};
-      return $self->_error("Failed to Load $connclass ($@)") unless eval "require $connclass";
-
-      $config->{connclass} = $connclass;
-
-      my $reqfields = $connclass->required_config_fields or return $self->_error('Failed to determine required config fields');
-
-      foreach my $name (@$reqfields){
-	    return $self->_error( $name . ' parameter is required' ) unless $config->{$name};
-      }
-
-      $config->{dbr_bootstrap} = $spec->{dbr_bootstrap}? 1:0;
-
-      foreach my $key (keys %{$config}) {
-	    $config->{connectstring} =~ s/-$key-/$config->{$key}/;
-      }
 
       # Register or Reuse the guid
       my $guid = $INSTANCE_MAP{ $config->{handle} }{ $config->{tag} }{ $config->{class} } ||= $GUID++;
@@ -233,90 +194,8 @@ sub register { # basically the same as a new
 ############################                                          #
 #######################################################################
 
+sub _config { $INSTANCES_BY_GUID{ $_[0]->{guid} } }
 
-sub connect{
-      my $self = shift;
-      my $flag = shift || '';
-
-      if (lc($flag) eq 'dbh') {
-	    return $self->getconn->dbh;
-      }elsif (lc($flag) eq 'conn') {
-	    return $self->getconn;
-      } else {
-	    return DBR::Handle->new(
-				    conn     => $self->getconn,
-				    session  => $self->{session},
-				    instance => $self,
-				   ) or confess 'Failed to create Handle object';
-      }
-}
-
-sub _connectid {
-    my $config = shift;
-
-    return join "\0", $config->{connectstring}, ($config->{user} || ''), ($config->{password} || '');
-}
-
-sub getconn{
-      my $self = shift;
-
-      my $config = $INSTANCES_BY_GUID{ $self->{guid} };
-      my $dedup  = _connectid($config);
-      my $conn = $CONCACHE{ $dedup };
-
-      # conn-ping-zoom!!
-      return $conn if $conn && $conn->ping; # Most of the time, we are done right here
-
-      if ($conn) {
-	    $conn->disconnect();
-	    $conn = $CONCACHE{ $dedup } = undef;
-	    $self->_logDebug('Handle went stale');
-      }
-
-      # if we are here, that means either the connection failed, or we never had one
-
-      $self->_logDebug2('getting a new connection');
-      $conn = $self->_new_connection() or confess "Failed to connect to ${\$self->handle}, ${\$self->class}";
-
-      $self->_logDebug2('Connected');
-
-      return $CONCACHE{ $dedup } = $conn;
-}
-
-sub phys_schema { $_[0]->getconn->schema_info($_[0]) }
-
-sub _new_connection{
-      my $self = shift;
-
-      my $config = $INSTANCES_BY_GUID{ $self->{guid} };
-      my @params = ($config->{connectstring}, $config->{user}, $config->{password});
-
-      my $dbh = DBI->connect(@params) or
-	return $self->_error("Error: Failed to connect to db $config->{handle},$config->{class}");
-
-      my $connclass = $config->{connclass};
-
-      return $self->_error("Failed to create $connclass object") unless
-	my $conn = $connclass->new(
-				   session => $self->{session},
-				   dbh     => $dbh
-				  );
-
-      return $conn;
-}
-
-sub is_readonly   { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{readonly} }
-sub handle        { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{handle}   }
-sub class         { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{class}    }
-sub tag           { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{tag}    }
-sub guid          { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{guid}     }
-sub module        { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{module}   }
-sub database      { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{database}      }
-sub prefix        { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{prefix}      }
-sub dbr_bootstrap { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{dbr_bootstrap} }
-sub schema_id     { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{schema_id} }
-sub meta_version  { $INSTANCES_BY_GUID{ $_[0]->{guid} }->{meta_version} }
-sub name          { return $_[0]->handle . ' ' . $_[0]->class }
 sub _fixup_schema_id {
     my ($self, $schema_id) = @_;
     my $config = $INSTANCES_BY_GUID{ $self->{guid} };
