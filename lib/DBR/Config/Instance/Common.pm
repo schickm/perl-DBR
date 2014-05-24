@@ -129,6 +129,7 @@ sub host          { $_[0]->_config->{hostname}      }
 sub username      { $_[0]->_config->{user}      }
 sub password      { $_[0]->_config->{password}      }
 sub database      { $_[0]->_config->{database}      }
+sub dbname        { $_[0]->_config->{database}      }
 sub dbfile        { $_[0]->_config->{dbfile}      }
 sub prefix        { $_[0]->_config->{prefix}      }
 sub dbr_bootstrap { $_[0]->_config->{dbr_bootstrap} }
