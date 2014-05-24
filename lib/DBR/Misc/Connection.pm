@@ -38,6 +38,13 @@ sub quote { shift->{dbh}->quote(@_)  }
 sub quote_identifier { shift->{dbh}->quote_identifier(@_) }
 sub can_lock { 1 }
 
+sub table_ref {
+    my ($self, $instance, $name) = @_;
+
+    my $pname = $instance->prefix . $name;
+    return $self->can('qualify_table') ? $self->qualify_table($instance, $pname) : $self->quote_identifier($pname);
+}
+
 # Default implementations of catalog query operators.
 # Since every DBD seems to implement this a bit differently, feel free to override in subclasses!
 
