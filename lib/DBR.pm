@@ -91,7 +91,7 @@ sub new {
 
       bless( $self, $package );
 
-      return $self->_error("Error: -conf must be specified") unless $params{-conf};
+      return $self->_error("Error: -conf must be specified") unless $params{-conf} || $params{-noconf};
 
       return $self->_error("Failed to create DBR::Util::Session object") unless
 	$self->{session} = DBR::Misc::Session->new(
@@ -102,17 +102,20 @@ sub new {
 						  );
 
       return $self->_error("Failed to create DBR::Config object") unless
-	my $config = DBR::Config->new( session => $self->{session} );
 
-      $config -> load_file(
-			   dbr  => $self,
-			   file => $params{-conf}
-			  ) or return $self->_error("Failed to load DBR conf file");
+    unless ($params{-noconf}) {
+        my $config = DBR::Config->new( session => $self->{session} );
+
+        $config->load_file(
+            dbr  => $self,
+            file => $params{-conf}
+        ) or return $self->_error("Failed to load DBR conf file");
 
 
-      DBR::Config::Instance->flush_all_handles(); # Make it safer for forking
+        DBR::Config::Instance->flush_all_handles(); # Make it safer for forking
+    }
 
-      return( $self );
+    return( $self );
 }
 
 
