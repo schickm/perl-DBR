@@ -13,6 +13,8 @@ my $inst_1 = $dbr->get_instance('empty');
 my $inst_2 = DBR::Config::Instance::Anon->new( map( ($_ => $inst_1->$_), qw' username host password dbname dbfile module prefix ' ) );
 $inst_2->{prefix} .= 'pfx__';
 
+use_ok 'DBR::Migrate::Operations::Alter';
+
 my @battery = (
 
     {
@@ -54,7 +56,7 @@ my @battery = (
     },
     {
         title => 'instance + from_name + to_name + columnspec(from,to)',
-        cmd => { instance => $inst_1, from_name => 'bob', to_name => 'bob', columns => [ { from_name => 'x', from_type => '', to_name => 'y', to_name => '' } ] },
+        cmd => { instance => $inst_1, from_name => 'bob', to_name => 'bob', columns => [ { from_name => 'x', from_type => '', to_name => 'y', to_type => '' } ] },
         valid => 1,
     },
     {
@@ -108,13 +110,13 @@ my @battery = (
         valid => 1,
     },
     {
-        title => 'instance + to_name + olumnspec(to)',
+        title => 'instance + to_name + olumnspec(from)',
         cmd => { instance => $inst_1, to_name => 'bob', columns => [ { from_name => 'x', from_type => '' } ] },
         invalid => 'drop',
     },
     {
-        title => 'instance + to_name + olumnspec(to)',
-        cmd => { instance => $inst_1, to_name => 'bob', columns => [ { to_name => 'x', to_type => '' } ] },
+        title => 'instance + from_name + olumnspec(to)',
+        cmd => { instance => $inst_1, from_name => 'bob', columns => [ { to_name => 'x', to_type => '' } ] },
         invalid => 'drop',
     },
     {
@@ -146,6 +148,10 @@ my @battery = (
         section => 'validation with foreign keys (TODO)',
     },
 
+    {
+        section => 'validation with foreign keys (TODO)',
+    },
+
 );
 
 for my $test (@battery) {
@@ -157,13 +163,13 @@ for my $test (@battery) {
     my ($op, $err);
 
     try {
-        $op = DBR::Migration::Operations::Alter->new(%{$test->{cmd}});
+        $op = DBR::Migrate::Operations::Alter->new(%{$test->{cmd}});
     } catch {
-        $err = $_; chomp $err;
+        ($err = $_) =~ s/\n.*//s;
     };
 
     if ($test->{invalid}) {
-        like $err, qr/$test->{invalid}/, "$test->{title} - invalid [$test->{invalid}]";
+        like $err||'', qr/$test->{invalid}/, "$test->{title} - invalid [$test->{invalid}]";
         next;
     }
 
