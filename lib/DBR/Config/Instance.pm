@@ -205,19 +205,4 @@ sub _fixup_schema_id {
     DBR::Config::Schema->_register_instance( schema_id => $schema_id, class => $config->{class}, tag => $config->{tag}, guid => $config->{guid} );
 }
 
-#shortcut to fetch the schema object that corresponds to this instance
-sub schema{
-      my $self = shift;
-      my %params = @_;
-
-      my $schema_id = $self->schema_id || return ''; # No schemas here
-
-      my $schema = DBR::Config::Schema->new(
-					    session   => $self->{session},
-					    schema_id => $schema_id,
-					   ) || return $self->_error("failed to fetch schema object for schema_id $schema_id");
-
-      return $schema;
-}
-
 1;

@@ -69,7 +69,7 @@ my %datatypes = (
 		 tinyblob  => { id => 16 },
 		 enum      => { id => 17 }, # I loathe mysql enums
 		 decimal   => { id => 18, numeric => 1, bits => 'NA'}, # HERE - may need a little more attention for proper range checking
-		 datetime  => { id => 19 },
+		 datetime  => { id => 19, datetime => 1 },
 		 binary    => { id => 20 },
 		 varbinary => { id => 21 },
 		);
@@ -168,7 +168,8 @@ sub _gen_valcheck{ # Intentionally Non-oo
 	    }
       }else{
 	    push @code, 'defined($v)' unless $fieldref->[C_is_nullable];
-	    if ($fieldref->[C_max_value] =~ /^\d+$/ && $fieldref->[C_max_value] > 0){ # use regex to prevent code injection
+            # don't validate string lengths for time fields...
+	    if ($fieldref->[C_max_value] =~ /^\d+$/ && $fieldref->[C_max_value] > 0 && !$dt->{datetime}){ # use regex to prevent code injection
 		  my $max = $fieldref->[C_max_value];
 		  push @code, "length(\$v)<= $max";
 	    }

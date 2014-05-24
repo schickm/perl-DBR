@@ -16,7 +16,7 @@ my $dbinfo = $dbr->connect('dbrconf')->select( -table => 'dbr_instances', -field
 
 ok($dbinfo, 'fetch DB config info');
 
-my $r = $dbr->connect('dbrconf')->insert( -table => 'dbr_instances', -fields => { schema_id => ['d',$dbinfo->{schema_id}], map(($_, $dbinfo->{$_}), qw'class dbfile module'), handle => 'newsch', prefix => 'pfx__' } );
+my $r = $dbr->connect('dbrconf')->insert( -table => 'dbr_instances', -fields => { schema_id => ['d',$dbinfo->{schema_id}], map(($_, $dbinfo->{$_}), qw'class dbfile module host username password dbname'), handle => 'newsch', prefix => 'pfx__' } );
 ok($r, 'save DB config info');
 
 my $dbri = $dbr->get_instance( 'newsch' );
@@ -24,8 +24,10 @@ my $dbrh = $dbri->connect;
 ok($dbri, 'get handle to new instance');
 is $dbri->prefix, 'pfx__', 'prefix readable';
 
-$dbri->connect('conn')->do('CREATE TABLE pfx__abc ( id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, a VARCHAR(255) NOT NULL, b VARCHAR(255) NOT NULL );');
-$dbri->connect('conn')->do(q{INSERT INTO pfx__abc VALUES (1,'a', 'b');});
+my $maini = $dbr->get_instance('sorttest');
+my $tbl = $maini->getconn->table_ref($maini, 'pfx__abc');
+$dbri->connect('conn')->do("CREATE TABLE $tbl ( id INTEGER PRIMARY KEY, a VARCHAR(255) NOT NULL, b VARCHAR(255) NOT NULL );");
+$dbri->connect('conn')->do("INSERT INTO $tbl VALUES (1,'a', 'b');");
 
 
 is ($dbrh->abc->all->count, 1, 'can use new table');

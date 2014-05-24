@@ -98,13 +98,13 @@ sub new {
 						   logger   => $self->{logger},
 						   admin    => $params{-admin} ? 1 : 0, # make the user jump through some hoops for updating metadata
 						   fudge_tz => $params{-fudge_tz},
-						   use_exceptions => $params{-use_exceptions},
+						   use_exceptions => $params{-use_exceptions} || $ENV{DBR_FORCE_EXCEPTIONS},
 						  );
 
-      return $self->_error("Failed to create DBR::Config object") unless
 
     unless ($params{-noconf}) {
-        my $config = DBR::Config->new( session => $self->{session} );
+        return $self->_error("Failed to create DBR::Config object") unless
+            my $config = DBR::Config->new( session => $self->{session} );
 
         $config->load_file(
             dbr  => $self,

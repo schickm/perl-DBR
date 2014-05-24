@@ -20,7 +20,7 @@ sub forward{
       my $self  = shift;
       my $value = shift;
       
-      my $unixtime = Time::ParseDate::parsedate($value);
+      my $unixtime = Time::ParseDate::parsedate($value, GMT => 1);
       return bless( [$unixtime,$self->{tzref}] , 'DBR::_UXTIME');
 }
 

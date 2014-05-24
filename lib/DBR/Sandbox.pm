@@ -112,15 +112,25 @@ sub _load_sqlfile{
       $buff .= $_;
     }
 
-    local $conn->dbh->{RaiseError} = 1;
     foreach my $part (split(';',$buff)){
       next unless $part =~ /\S+/;
       next if $part =~ /^\s*--/;
-      $part =~ s{TBL\((\w+)\)}{ $conn->table_ref($inst, $1) }eg;
-      $conn->dbh->do($part) or return 0;
+      _run_metasql($inst, $part);
     }
 
     return 1;
+}
+
+sub _run_metasql {
+    my ($inst, @sql) = @_;
+    my $conn = $inst->getconn;
+    my $sql = join '', @sql;
+
+    local $conn->dbh->{RaiseError} = 1;
+    $sql =~ s{TBL\((\w+)\)}{ $conn->table_ref($inst, $1) }eg;
+    $sql =~ s{Q\((\w+)\)}{ $conn->quote_identifier($1) }eg;
+    $sql =~ s/AUTOINCREMENT/AUTO_INCREMENT/g if $inst->module eq 'Mysql';
+    $conn->dbh->do($sql);
 }
 
 sub _setup_metadb {
@@ -129,11 +139,23 @@ sub _setup_metadb {
     my $schema  = shift;
     my $dbr = shift;
     my $inst = shift;
-    my $dbh = $dbr->connect('dbh');
 
-    $dbh->do("INSERT INTO dbr_schemas (schema_id,handle) values (1,'$schema')") or return 0;
-    $dbh->do("INSERT INTO dbr_instances (schema_id,handle,class,module,dbfile,host,username,password) values (1,'$schema','master',?,?,?,?,?)",undef,
-        $inst->module, $inst->dbfile, $inst->host, $inst->username, $inst->password) or return 0;
+    $dbr->connect->insert( -table => 'dbr_schemas', -fields => { schema_id => 1, handle => $schema } );
+
+    $dbr->connect->insert(
+        -table => 'dbr_instances',
+        -fields => {
+            schema_id => ['d',1],
+            handle => $schema,
+            class => 'master',
+            module => $inst->module,
+            dbfile => $inst->dbfile,
+            host => $inst->host,
+            username => $inst->username,
+            password => $inst->password,
+            dbname => $inst->database,
+        }
+    );
 
     return 1;
 }
@@ -152,7 +174,7 @@ sub _write_dbrconf{
     print $fh "# instances here is possible, but discouraged, as functionality will be\n";
     print $fh "# dramatically degraded due to lack of metadata.\n\n";
     
-    print $fh "name=dbrconf; class=master; dbfile=@{[$metadb->dbfile||'']}; type=@{[$metadb->module||'']}; host=@{[$metadb->host||'']}; username=@{[$metadb->username||'']}; password=@{[$metadb->password||'']}; dbr_bootstrap=1; meta_version=$ver\n";
+    print $fh "name=dbrconf; class=master; database=@{[$metadb->database||'']}; dbfile=@{[$metadb->dbfile||'']}; type=@{[$metadb->module||'']}; host=@{[$metadb->host||'']}; user=@{[$metadb->username||'']}; password=@{[$metadb->password||'']}; dbr_bootstrap=1; meta_version=$ver\n";
     close $fh;
 
     return 1;
@@ -168,6 +190,27 @@ sub sqlite_factory {
         prefix  => "",
         class   => "master",
     );
+}
+
+sub mysql_factory {
+    my ($pkg, $name, $sandbox, $sess, $host, $user, $pass) = @_;
+
+    my $inst = DBR::Config::Instance::Anon->new(
+        session => $sess,
+        module  => "Mysql",
+        database => "dbr_sandbox_$name",
+        user     => $user,
+        password => $pass,
+        hostname => $host,
+        prefix  => "",
+        class   => "master",
+    );
+
+    my $dbh = $inst->getconn->dbh;
+    local $dbh->{RaiseError} = 1;
+    $dbh->do('DROP DATABASE IF EXISTS '.$inst->database);
+    $dbh->do('CREATE DATABASE '.$inst->database);
+    return $inst;
 }
 
 1;

@@ -126,7 +126,7 @@ sub tag           { $_[0]->_config->{tag}    }
 sub guid          { $_[0]->_config->{guid}     }
 sub module        { $_[0]->_config->{module}   }
 sub host          { $_[0]->_config->{hostname}      }
-sub username      { $_[0]->_config->{username}      }
+sub username      { $_[0]->_config->{user}      }
 sub password      { $_[0]->_config->{password}      }
 sub database      { $_[0]->_config->{database}      }
 sub dbfile        { $_[0]->_config->{dbfile}      }
@@ -135,5 +135,20 @@ sub dbr_bootstrap { $_[0]->_config->{dbr_bootstrap} }
 sub schema_id     { $_[0]->_config->{schema_id} }
 sub meta_version  { $_[0]->_config->{meta_version} }
 sub name          { return $_[0]->handle . ' ' . $_[0]->class }
+
+#shortcut to fetch the schema object that corresponds to this instance
+sub schema{
+      my $self = shift;
+      my %params = @_;
+
+      my $schema_id = $self->schema_id || return ''; # No schemas here
+
+      my $schema = DBR::Config::Schema->new(
+					    session   => $self->{session},
+					    schema_id => $schema_id,
+					   ) || return $self->_error("failed to fetch schema object for schema_id $schema_id");
+
+      return $schema;
+}
 
 1;

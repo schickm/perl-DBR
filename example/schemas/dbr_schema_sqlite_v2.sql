@@ -1,13 +1,13 @@
 
 
-CREATE TABLE dbr_schemas (
+CREATE TABLE TBL(dbr_schemas) (
   schema_id INTEGER PRIMARY KEY AUTOINCREMENT,
   handle varchar(50) default NULL,
   display_name varchar(50) default NULL,
   owned_by_migration tinyint(1) default 0 -- prevents dbr-scan and dbr-load-spec
 );
 
-CREATE TABLE dbr_instances (
+CREATE TABLE TBL(dbr_instances) (
   instance_id INTEGER PRIMARY KEY AUTOINCREMENT,
   schema_id int(10)  NOT NULL,
   handle varchar(50) NOT NULL,
@@ -22,7 +22,7 @@ CREATE TABLE dbr_instances (
   module varchar(50) NOT NULL,
   readonly boolean
 );
-CREATE TABLE dbr_tables (
+CREATE TABLE TBL(dbr_tables) (
   table_id INTEGER PRIMARY KEY AUTOINCREMENT,
   schema_id int(10)  NOT NULL,
   name varchar(250) NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE dbr_tables (
   is_cachable tinyint(1)
 );
 
-CREATE TABLE dbr_fields (
+CREATE TABLE TBL(dbr_fields) (
   field_id INTEGER PRIMARY KEY AUTOINCREMENT,
   table_id int(10)  NOT NULL,
   name varchar(250) NOT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE dbr_fields (
 
 -- this representation uses only one table, and naturally captures the fact that an index is also an index on a prefix of the columns
 -- no support for DESC indexes.  does anyone use those? ;
-CREATE TABLE indexes (
+CREATE TABLE TBL(indexes) (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   field_id int(10) NOT NULL,
   refinement_of_id int(10) NULL,
@@ -59,19 +59,19 @@ CREATE TABLE indexes (
 
 -- don't store foreign key info, because we create foreign keys whenever we can (need a relationship, two colocated instances, and indexes on both tables) ;
 
-CREATE TABLE managed_rows (
+CREATE TABLE TBL(managed_rows) (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   table_id int(10) NOT NULL
 );
 
-CREATE TABLE managed_values (
+CREATE TABLE TBL(managed_values) (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   row_id int(10) NOT NULL,
   field_id int(10) NOT NULL,
   value varchar(255) NULL
 );
 
-CREATE TABLE migrations (
+CREATE TABLE TBL(migrations) (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name varchar(255) NOT NULL,
   active tinyint(1) not null default 0,
@@ -79,7 +79,7 @@ CREATE TABLE migrations (
   content longblob not null
 );
 
-CREATE TABLE dbr_relationships (
+CREATE TABLE TBL(dbr_relationships) (
   relationship_id INTEGER PRIMARY KEY AUTOINCREMENT,
 
   from_name varchar(45) NOT NULL ,
@@ -93,30 +93,30 @@ CREATE TABLE dbr_relationships (
   type tinyint(3)  NOT NULL
 );
 
-CREATE TABLE cache_scopes (
+CREATE TABLE TBL(cache_scopes) (
   scope_id INTEGER PRIMARY KEY AUTOINCREMENT,
   digest char(32) default NULL
 );
-CREATE TABLE cache_fielduse (
+CREATE TABLE TBL(cache_fielduse) (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
   scope_id int(10)  NOT NULL,
   field_id int(10)  NOT NULL
 );
 
-CREATE TABLE enum (
+CREATE TABLE TBL(enum) (
   enum_id INTEGER PRIMARY KEY AUTOINCREMENT,
   handle varchar(250) default NULL ,
   name varchar(250) default NULL,
   override_id int(10)  default NULL
 );
-CREATE TABLE enum_legacy_map (
+CREATE TABLE TBL(enum_legacy_map) (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
   context varchar(250) default NULL,
   field varchar(250) default NULL,
   enum_id int(10)  NOT NULL,
   sortval int(11) default NULL
 );
-CREATE TABLE enum_map (
+CREATE TABLE TBL(enum_map) (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
   field_id int(10)  NOT NULL,
   enum_id int(10)  NOT NULL,

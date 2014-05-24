@@ -1,12 +1,12 @@
 
 
-CREATE TABLE dbr_schemas (
+CREATE TABLE TBL(dbr_schemas) (
   schema_id INTEGER PRIMARY KEY AUTOINCREMENT,
   handle varchar(50) default NULL,
   display_name varchar(50) default NULL
 );
 
-CREATE TABLE dbr_instances (
+CREATE TABLE TBL(dbr_instances) (
   instance_id INTEGER PRIMARY KEY AUTOINCREMENT,
   schema_id int(10)  NOT NULL,
   handle varchar(50) NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE dbr_instances (
   module varchar(50) NOT NULL,
   readonly boolean
 );
-CREATE TABLE dbr_tables (
+CREATE TABLE TBL(dbr_tables) (
   table_id INTEGER PRIMARY KEY AUTOINCREMENT,
   schema_id int(10)  NOT NULL,
   name varchar(250) NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE dbr_tables (
   is_cachable tinyint(1)
 );
 
-CREATE TABLE dbr_fields (
+CREATE TABLE TBL(dbr_fields) (
   field_id INTEGER PRIMARY KEY AUTOINCREMENT,
   table_id int(10)  NOT NULL,
   name varchar(250) NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE dbr_fields (
   default_val varchar(250) default NULL
 );
 
-CREATE TABLE dbr_relationships (
+CREATE TABLE TBL(dbr_relationships) (
   relationship_id INTEGER PRIMARY KEY AUTOINCREMENT,
 
   from_name varchar(45) NOT NULL ,
@@ -58,30 +58,30 @@ CREATE TABLE dbr_relationships (
   type tinyint(3)  NOT NULL
 );
 
-CREATE TABLE cache_scopes (
+CREATE TABLE TBL(cache_scopes) (
   scope_id INTEGER PRIMARY KEY AUTOINCREMENT,
   digest char(32) default NULL
 );
-CREATE TABLE cache_fielduse (
+CREATE TABLE TBL(cache_fielduse) (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
   scope_id int(10)  NOT NULL,
   field_id int(10)  NOT NULL
 );
 
-CREATE TABLE enum (
+CREATE TABLE TBL(enum) (
   enum_id INTEGER PRIMARY KEY AUTOINCREMENT,
   handle varchar(250) default NULL ,
   name varchar(250) default NULL,
   override_id int(10)  default NULL
 );
-CREATE TABLE enum_legacy_map (
+CREATE TABLE TBL(enum_legacy_map) (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
   context varchar(250) default NULL,
   field varchar(250) default NULL,
   enum_id int(10)  NOT NULL,
   sortval int(11) default NULL
 );
-CREATE TABLE enum_map (
+CREATE TABLE TBL(enum_map) (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
   field_id int(10)  NOT NULL,
   enum_id int(10)  NOT NULL,

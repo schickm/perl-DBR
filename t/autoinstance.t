@@ -18,7 +18,7 @@ my $dbinfo = $dbr->connect('dbrconf')->select( -table => 'dbr_instances', -field
 
 ok($dbinfo, 'fetch DB config info');
 
-my $r = $dbr->connect('dbrconf')->insert( -table => 'dbr_instances', -fields => { schema_id => ['d',$dbinfo->{schema_id}], map(($_, $dbinfo->{$_}), qw'class dbfile module'), handle => 'newsch' } );
+my $r = $dbr->connect('dbrconf')->insert( -table => 'dbr_instances', -fields => { schema_id => ['d',$dbinfo->{schema_id}], map(($_, $dbinfo->{$_}), qw'class dbfile module dbname host username password'), handle => 'newsch' } );
 ok($r, 'save DB config info');
 
 $dbrh = $dbr->connect( 'newsch' );

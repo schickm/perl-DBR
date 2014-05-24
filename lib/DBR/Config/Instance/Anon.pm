@@ -11,6 +11,7 @@ sub new {
     my $package = shift;
 
     my $self = bless( {@_}, $package );
+    $self->{schema_id} ||= '';
     return $self->_inflate($self);
 }
 

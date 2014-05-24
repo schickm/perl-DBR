@@ -1,13 +1,13 @@
-CREATE TABLE abc (
+CREATE TABLE TBL(abc) (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     a VARCHAR(255) NOT NULL,
     b VARCHAR(255) NOT NULL
 );
 
-CREATE INDEX abc_a ON abc (a);
-CREATE UNIQUE INDEX abc_b ON abc (b);
+CREATE INDEX abc_a ON TBL(abc) (a);
+CREATE UNIQUE INDEX abc_b ON TBL(abc) (b);
 
-CREATE TABLE DEF (
+CREATE TABLE TBL(def) (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     d VARCHAR(255) NOT NULL,
     e VARCHAR(255) NOT NULL,
@@ -16,12 +16,12 @@ CREATE TABLE DEF (
     h VARCHAR(255) NOT NULL
 );
 
-CREATE UNIQUE INDEX def_de ON def (d,e);
-CREATE INDEX def_gf ON def (g, f);
-CREATE INDEX def_gh ON def (g, h);
-CREATE INDEX def_gde ON def (g, d, e);
+CREATE UNIQUE INDEX def_de ON TBL(def) (d,e);
+CREATE INDEX def_gf ON TBL(def) (g, f);
+CREATE INDEX def_gh ON TBL(def) (g, h);
+CREATE INDEX def_gde ON TBL(def) (g, d, e);
 
-CREATE TABLE dectest (
+CREATE TABLE TBL(dectest) (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    dec DECIMAL(5,2)
+    Q(dec) DECIMAL(5,2)
 );
