@@ -9,7 +9,7 @@ use DBR::Config::Schema;
 use File::Path;
 use DBR::Sandbox;
 
-our @EXPORT = qw(connect_ok setup_schema_ok);
+our @EXPORT = qw(connect_ok setup_schema_ok dump_instance load_instance);
 our $VERSION = '1';
 
 use base 'Exporter';
@@ -45,6 +45,79 @@ sub setup_schema_ok{
     
     Test::More::ok( $dbr, 'Setup Schema' );
     return $dbr;
+}
+
+sub dump_instance {
+    my ($inst) = @_;
+    my $conn = $inst->getconn;
+
+    my $sch = $conn->flush_schema->schema_info($inst);
+
+    my @out;
+    for my $k (sort keys %$sch) {
+        my $tbl = $sch->{$k};
+        my $cols = $tbl->{columns};
+        my @col_list = sort keys %$cols;
+        my @column_parts;
+        my @fk_parts;
+        my @indexes;
+        for my $cn (@col_list) {
+            my $ci = $cols->{$cn};
+            my $col = "Q($cn) $ci->{type}";
+            if ($ci->{decimal_digits}) {
+                $col .= "($ci->{max_value},$ci->{decimal_digits})";
+            } elsif ($ci->{max_value}) {
+                $col .= "($ci->{max_value})";
+            }
+            if (!$ci->{is_signed}) {
+                $col .= " UNSIGNED";
+            }
+            if (!$ci->{is_nullable}) {
+                $col .= " NOT NULL";
+            }
+            if ($ci->{is_pkey} && grep($_->{is_pkey},values %{$tbl->{columns}}) == 1) {
+                $col .= " PRIMARY KEY";
+                $col .= " AUTOINCREMENT" if $ci->{type} =~ /INT/;
+            }
+            push @column_parts, $col;
+            if ($ci->{ref_table}) {
+                push @fk_parts, "FOREIGN KEY (Q($cn)) REFERENCES ".($ci->{ref_dbname} ? "QQ($ci->{ref_dbname},$ci->{ref_table})" : "Q($ci->{ref_table})")." (Q($ci->{ref_field}))";
+            }
+        }
+
+        for my $ix (values %{$tbl->{indexes}}) {
+            my @bits;
+            for my $p (@{$ix->{parts}}) {
+                push @bits, "Q($p->{column})" . ($p->{prefix_length} ? " ($p->{prefix_length})" : "");
+            }
+            my $unique = $ix->{unique} ? " UNIQUE" : "";
+            push @indexes, "CREATE$unique INDEX Q() ON TBL($k) (".join(', ',@bits).");\n";
+        }
+
+        @indexes = sort @indexes;
+        my $ii = 0;
+        map { s/Q\(\)/Q(${k}__${ii})/; $ii++ } @indexes;
+
+        push @out, "CREATE TABLE TBL($k) (".join(', ',@column_parts,@fk_parts).");\n";
+        push @out, @indexes;
+
+        for my $row (@{ $inst->connect->select( -table => $k, -fields => \@col_list ) }) {
+            my @fld;
+            my @val;
+
+            for my $c (@col_list) {
+                push @fld, "Q($c)";
+                push @val, $cols->{$c}->{type} =~ /INT/ ? $row->{$c} : $conn->quote($row->{$c});
+            }
+
+            push @out, "INSERT INTO TBL($k) (".join(', ',@fld).") VALUES (".join(', ',@val).");\n";
+        }
+    }
+
+    return join "", @out;
+}
+
+sub load_instance {
 }
 
 1;

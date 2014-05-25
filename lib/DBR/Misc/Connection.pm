@@ -49,10 +49,11 @@ sub table_ref {
 # Since every DBD seems to implement this a bit differently, feel free to override in subclasses!
 
 # these four are meant to return something close to the DBI native format
-sub table_info { my ($self, $inst) = @_; return $self->{_table_info}{$inst->database||''} ||= $self->_table_info($inst) }
-sub primary_key_info { my ($self, $inst) = @_; return $self->{_primary_key_info}{$inst->database||''} ||= $self->_primary_key_info($inst) }
-sub column_info { my ($self, $inst) = @_; return $self->{_column_info}{$inst->database||''} ||= $self->_column_info($inst) }
-sub index_info { my ($self, $inst) = @_; return $self->{_index_info}{$inst->database||''} ||= $self->_index_info($inst) }
+sub table_info { my ($self, $inst) = @_; return $self->{_schema}{tbl}{$inst->database||''} ||= $self->_table_info($inst) }
+sub primary_key_info { my ($self, $inst, $tbl) = @_; return $self->{_schema}{pk}{$inst->database||''}{$tbl} ||= $self->_primary_key_info($inst, $tbl) }
+sub column_info { my ($self, $inst, $tbl) = @_; return $self->{_schema}{col}{$inst->database||''}{$tbl} ||= $self->_column_info($inst, $tbl) }
+sub index_info { my ($self, $inst, $tbl) = @_; return $self->{_schema}{ix}{$inst->database||''}{$tbl} ||= $self->_index_info($inst, $tbl) }
+sub fkey_info { my ($self, $inst, $tbl) = @_; return $self->{_schema}{fk}{$inst->database||''}{$tbl} ||= $self->_fkey_info($inst, $tbl) }
 
 sub _table_info {
     my ($self, $db) = @_;
@@ -61,40 +62,46 @@ sub _table_info {
 }
 
 sub _primary_key_info {
-    my ($self, $db) = @_;
+    my ($self, $db, $tbl) = @_;
     local $self->{dbh}->{RaiseError} = 1;
-    return [ map {
-        @{ $self->{dbh}->primary_key_info(undef, $db->database, $_->{TABLE_NAME})->fetchall_arrayref({}) }
-    } @{ $self->table_info($db) } ];
+    return $self->{dbh}->primary_key_info(undef, $db->database, $tbl)->fetchall_arrayref({});
 }
 
 sub _column_info {
-    my ($self, $db) = @_;
+    my ($self, $db, $tbl) = @_;
     local $self->{dbh}->{RaiseError} = 1;
-    return [ map {
-        @{ $self->{dbh}->column_info(undef, $db->database, $_->{TABLE_NAME}, undef)->fetchall_arrayref({}) }
-    } @{ $self->table_info($db) } ];
+    return $self->{dbh}->column_info(undef, $db->database, $tbl, undef)->fetchall_arrayref({});
 }
 
 sub _index_info { [] } # not supported portably in DBI
+
+sub _fkey_info { [] } # not supported portably in DBI
 
 sub schema_info {
     my ($self, $inst) = @_;
 
     my %out;
-    my %by_orig;
     my $pfx = $inst->prefix;
 
-    for my $t (@{ $self->table_info($inst) }) {
-        my $name = $t->{TABLE_NAME};
+    for my $tob (@{ $self->table_info($inst) }) {
+        my $oname = $tob->{TABLE_NAME};
+        my $name = $oname;
         $name =~ s/^\Q$pfx// or next;
 
-        $out{$name} = $by_orig{$t->{TABLE_NAME}} = { columns => {}, indexes => {} };
+        $out{$name} = $self->table_schema_info($inst, $oname);
     }
 
-    for my $c (@{ $self->column_info($inst) }) {
-        my $t = $by_orig{$c->{TABLE_NAME}} or next;
+    return \%out;
+}
 
+sub flush_schema { delete $_[0]{_schema}; return $_[0] }
+
+sub table_schema_info {
+    my ($self, $inst, $oname) = @_;
+
+    my $t = { columns => {}, indexes => {} };
+
+    for my $c (@{ $self->column_info($inst, $oname) }) {
         $t->{columns}{$c->{COLUMN_NAME}} = {
             type => $c->{TYPE_NAME},
             max_value => $c->{COLUMN_SIZE},
@@ -104,19 +111,24 @@ sub schema_info {
         };
     }
 
-    for my $p (@{ $self->primary_key_info($inst) }) {
-        my $t = $by_orig{$p->{TABLE_NAME}} or next;
+    for my $p (@{ $self->primary_key_info($inst, $oname) }) {
         my $c = $t->{columns}{$p->{COLUMN_NAME}} or next;
         $c->{is_pkey} = 1;
     }
 
-    for my $i (@{ $self->index_info($inst) }) {
-        my $t = $by_orig{$i->{TABLE_NAME}} or next;
+    for my $i (@{ $self->index_info($inst, $oname) }) {
         my $io = $t->{indexes}{$i->{INDEX_NAME}} ||= { unique => $i->{NON_UNIQUE}?0:1, parts => [] };
         push @{$io->{parts}}, { column => $i->{COLUMN_NAME}, prefix_length => $i->{SUB_PART} };
     }
 
-    return \%out;
+    for my $f (@{ $self->fkey_info($inst, $oname) }) {
+        my $c = $t->{columns}{$f->{COLUMN_NAME}} or next;
+        $c->{ref_dbname} = $f->{REFERENCED_TABLE_SCHEMA};
+        $c->{ref_table} = $f->{REFERENCED_TABLE_NAME};
+        $c->{ref_field} = $f->{REFERENCED_COLUMN_NAME};
+    }
+
+    return $t;
 }
 
 sub ping {

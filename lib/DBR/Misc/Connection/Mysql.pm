@@ -43,10 +43,23 @@ sub quote {
 }
 
 sub _index_info {
-    my ($self, $inst) = @_;
+    my ($self, $inst, $tbl) = @_;
 
     local $self->{dbh}->{RaiseError} = 1;
-    return $self->{dbh}->selectall_arrayref(q{SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SUB_PART FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = ? AND INDEX_NAME <> 'PRIMARY' ORDER BY INDEX_NAME, SEQ_IN_INDEX }, { Slice => { } }, $inst->database);
+    return $self->{dbh}->selectall_arrayref(q{
+        SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SUB_PART FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME <> 'PRIMARY' ORDER BY INDEX_NAME, SEQ_IN_INDEX
+    }, { Slice => { } }, $inst->database, $tbl);
+}
+
+sub _fk_info {
+    my ($self, $inst, $tbl) = @_;
+
+    local $self->{dbh}->{RaiseError} = 1;
+    return $self->{dbh}->selectall_arrayref(q{
+        SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL AND ORDINAL_POSITION = 1
+    }, { Slice => { } }, $inst->database, $tbl);
 }
 
 sub _column_info {
