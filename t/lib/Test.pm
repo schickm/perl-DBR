@@ -60,7 +60,9 @@ sub dump_instance {
         my @col_list = sort keys %$cols;
         my @column_parts;
         my @fk_parts;
+        my @pk_parts;
         my @indexes;
+        my @pkey = map("Q($_)", grep($cols->{$_}{is_pkey},values %$cols));
         for my $cn (@col_list) {
             my $ci = $cols->{$cn};
             my $col = "Q($cn) $ci->{type}";
@@ -72,18 +74,20 @@ sub dump_instance {
             if (!$ci->{is_signed}) {
                 $col .= " UNSIGNED";
             }
-            if (!$ci->{is_nullable}) {
+            if (!$ci->{is_nullable} && !$ci->{is_pkey}) {
                 $col .= " NOT NULL";
             }
-            if ($ci->{is_pkey} && grep($_->{is_pkey},values %{$tbl->{columns}}) == 1) {
+            if ($ci->{is_pkey} && @pkey == 1) {
                 $col .= " PRIMARY KEY";
                 $col .= " AUTOINCREMENT" if $ci->{type} =~ /INT/;
             }
             push @column_parts, $col;
             if ($ci->{ref_table}) {
-                push @fk_parts, "FOREIGN KEY (Q($cn)) REFERENCES ".($ci->{ref_dbname} ? "QQ($ci->{ref_dbname},$ci->{ref_table})" : "Q($ci->{ref_table})")." (Q($ci->{ref_field}))";
+                push @fk_parts, "FOREIGN KEY (Q($cn)) REFERENCES ".($ci->{ref_dbname} ? "Q($ci->{ref_dbname}).Q($ci->{ref_table})" : "Q($ci->{ref_table})")." (Q($ci->{ref_field}))";
             }
         }
+
+        push @pk_parts, "PRIMARY KEY (".join(', ',@pkey).")" if @pkey > 1;
 
         for my $ix (values %{$tbl->{indexes}}) {
             my @bits;
@@ -91,14 +95,14 @@ sub dump_instance {
                 push @bits, "Q($p->{column})" . ($p->{prefix_length} ? " ($p->{prefix_length})" : "");
             }
             my $unique = $ix->{unique} ? " UNIQUE" : "";
-            push @indexes, "CREATE$unique INDEX Q() ON TBL($k) (".join(', ',@bits).");\n";
+            push @indexes, "CREATE$unique INDEX Q() ON TBL($k) (".join(', ',@bits).");";
         }
 
         @indexes = sort @indexes;
         my $ii = 0;
         map { s/Q\(\)/Q(${k}__${ii})/; $ii++ } @indexes;
 
-        push @out, "CREATE TABLE TBL($k) (".join(', ',@column_parts,@fk_parts).");\n";
+        push @out, "CREATE TABLE TBL($k) (".join(', ',@column_parts,@pk_parts,@fk_parts).");";
         push @out, @indexes;
 
         for my $row (@{ $inst->connect->select( -table => $k, -fields => \@col_list ) }) {
@@ -110,14 +114,30 @@ sub dump_instance {
                 push @val, $cols->{$c}->{type} =~ /INT/ ? $row->{$c} : $conn->quote($row->{$c});
             }
 
-            push @out, "INSERT INTO TBL($k) (".join(', ',@fld).") VALUES (".join(', ',@val).");\n";
+            push @out, "INSERT INTO TBL($k) (".join(', ',@fld).") VALUES (".join(', ',@val).");";
         }
     }
 
-    return join "", @out;
+    return @out;
 }
 
 sub load_instance {
+    my ($inst, @sql) = @_;
+
+    my $conn = $inst->getconn;
+    local $conn->dbh->{RaiseError} = 1;
+    for my $tbl (keys %{$inst->phys_schema}) {
+        $conn->dbh->do('DROP TABLE '.$conn->table_ref($inst,$tbl));
+    }
+    $conn->flush_schema;
+
+    for my $stmt (@sql) {
+        $stmt =~ s{TBL\((\w+)\)}{ $conn->table_ref($inst, $1) }eg;
+        $stmt =~ s{Q\((\w+)\)}{ $conn->quote_identifier($1) }eg;
+        $stmt =~ s/AUTOINCREMENT/AUTO_INCREMENT/g if $inst->module eq 'Mysql';
+        $stmt =~ s/(\([0-9, ]+\)) (UNSIGNED)/$2 $1/g if $inst->module ne 'Mysql';
+        $conn->dbh->do($stmt);
+    }
 }
 
 1;
