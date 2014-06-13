@@ -11,7 +11,8 @@ use base 'DBR::Common';
 
 use DBR::Config::Trans;
 use DBR::Config::Relation;
-no warnings 'deprecated';
+use warnings;
+no warnings 'uninitialized', 'deprecated';
 use DBR::Config::ScanDB;
 use Try::Tiny;
 

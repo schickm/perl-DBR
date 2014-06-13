@@ -1,6 +1,8 @@
 package DBR::Config::Trans::Enum;
 
 use strict;
+use warnings;
+no warnings 'uninitialized';
 use base 'DBR::Config::Trans';
 
 use Clone qw(clone);

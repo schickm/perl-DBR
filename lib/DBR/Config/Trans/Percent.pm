@@ -1,6 +1,8 @@
 package DBR::Config::Trans::Percent;
 
 use strict;
+use warnings;
+no warnings 'uninitialized';
 use base 'DBR::Config::Trans';
 
 sub new { die "Should not get here" }

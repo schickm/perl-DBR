@@ -5,6 +5,8 @@
 
 package DBR::Config::Trans::DateTime;
 use strict;
+use warnings;
+no warnings 'uninitialized';
 
 use base 'DBR::Config::Trans';
 use DBR::Config::Trans::UnixTime;

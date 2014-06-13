@@ -1,6 +1,8 @@
 package DBR::Config::Trans::Dollars;
 
 use strict;
+use warnings;
+no warnings 'uninitialized', 'numeric';
 use base 'DBR::Config::Trans';
 
 sub new { die "Should not get here" }

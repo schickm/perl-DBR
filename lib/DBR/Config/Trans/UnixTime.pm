@@ -6,8 +6,9 @@
 package DBR::Config::Trans::UnixTime;
 
 use strict;
+use warnings;
+no warnings 'uninitialized';
 use base 'DBR::Config::Trans';
-use strict;
 #use Date::Parse ();
 use Time::ParseDate ();
 use POSIX qw(strftime tzset);
@@ -61,7 +62,6 @@ sub backward{
 
 package DBR::_UXTIME;
 
-use strict;
 use POSIX qw(strftime tzset);
 use Carp;
 use overload 
