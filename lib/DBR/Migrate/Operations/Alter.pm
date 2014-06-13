@@ -46,6 +46,75 @@ sub BUILD {
     }
 }
 
+sub _run {
+    my ($self) = @_;
+
+    if (defined($self->{to_name}) && !defined($self->{from_name})) {
+        return $self->_run_create;
+    }
+
+    if (defined($self->{from_name}) && !defined($self->{to_name})) {
+        return $self->_run_drop;
+    }
+
+    if ($self->{instance}->module eq 'Mysql') {
+        return $self->_run_alter_mysql;
+    } else {
+        return $self->_run_alter_sqlite;
+    }
+}
+
+sub _run_create {
+    my ($self) = @_;
+
+    # compile into SQL
+    # this one is easy from a safety POV b/c you can always just drop the table
+
+
+    my @plan;
+    push @plan, do   => 'CREATE TABLE ...';
+    push @plan, undo => 'DROP TABLE ...';
+    push @plan, do   => 'CREATE INDEX ...';
+
+    return $self->_runplan(@plan);
+}
+
+sub _run_drop {
+    my ($self) = @_;
+
+    # check against current schema, make sure the table would be *exactly* recreated by a reversal
+
+    my @plan;
+    push @plan, chk  => 'SELECT COUNT(*) FROM ...';
+    push @plan, do   => 'DROP TABLE ...';
+
+    return $self->_runplan(@plan);
+}
+
+sub _run_alter_mysql {
+    my ($self) = @_;
+
+    # compare to current schema, build out an ALTER command
+}
+
+sub _run_alter_sqlite {
+    my ($self) = @_;
+
+    # compare to current schema
+    # if there are any column or foreign key changes:
+    #   CREATE TABLE <new_or_temp> (, , ,)
+    #   INSERT INTO <new_or_temp> SELECT ... FROM <old>
+    #   CREATE INDEX ...
+    #   if (new == old):
+    #     DROP TABLE <old>
+    #     ALTER TABLE <temp> RENAME TO <old>
+
+    # otherwise just index and name changes
+    # ALTER TABLE <old> RENAME TO <new>
+    # DROP INDEX ...
+    # CREATE INDEX ...
+}
+
 __PACKAGE__->meta->make_immutable;
 
 1;
