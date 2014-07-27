@@ -42,6 +42,8 @@ sub user_id {
     return @_ > 1 ? ($_[0]{user_id} = $_[1]) : ($_[0]{user_id});
 }
 
+sub _sync_cdc { 1 }
+
 sub timezone {
       my $self = shift;
       my $tz   = shift;

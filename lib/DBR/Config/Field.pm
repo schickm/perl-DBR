@@ -32,6 +32,7 @@ use constant ({
 
 	       C_is_readonly => 11, # Not in table
 	       C_testsub     => 12,
+               C_is_system   => 13,
 
 	       # Object fields
 	       O_field_id    => 0,
@@ -118,7 +119,7 @@ sub load{
 
 	    $field->[C_is_readonly] = 1 if $field->[C_is_pkey];
 
-	    DBR::Config::Table->_register_field(
+	    my $tbl = DBR::Config::Table->_register_field(
 						table_id => $field->[C_table_id],
 						name     => $field->[C_name],
 						field_id => $field->[C_field_id],
@@ -127,6 +128,8 @@ sub load{
 						# OK OK... this is a hack. Just because it's a pkey doesn't mean it's not required.
 						# It would seem that we need to be aware of serial/trigger fields.
 					       ) or die('failed to register field');
+
+            $field->[C_is_system] = $field->[C_is_readonly] = 1 if $tbl->{name} =~ /^cdc_/ || $field->[C_name] =~ /^cdc_/;
 
 	    if ( $datatype_lookup{ $field->[C_data_type] }->{handle} eq 'datetime' ){ 
 			$field->[C_trans_id] ||= 5; #DateTime hack
@@ -258,6 +261,7 @@ sub name         { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_name]        }
 sub is_pkey      { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_pkey]     }
 sub is_nullable  { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_nullable] }
 sub is_readonly  { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_readonly] }
+sub is_system    { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_system] }
 sub is_signed    { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_signed]   }
 sub datatype     { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_data_type]   }
 sub typename     { $datatype_lookup{ $_[0]->datatype }{ handle }          }

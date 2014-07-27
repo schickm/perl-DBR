@@ -93,7 +93,7 @@ sub _register_field{
       if( $params{is_pkey} ){  push @{$PK_FIELDS{ $table_id }},  $field_id }
       if( $params{is_req}  ){  push @{$REQ_FIELDS{ $table_id }}, $field_id }
 
-      return 1;
+      return $TABLES_BY_ID{ $table_id };
 }
 
 sub _register_relation{

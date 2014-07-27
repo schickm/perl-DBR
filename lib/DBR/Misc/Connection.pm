@@ -126,6 +126,11 @@ sub rollback{
       return 1;
 }
 
+sub _cdc_capture {
+    my ($self, %p) = @_;
+    # oldversion, new, old, table
+}
+
 ######### ability check stubs #########
 
 sub can_trust_execute_rowcount{ 0 }

@@ -119,11 +119,26 @@ sub insert {
       foreach my $fieldname (keys %fields){
 
  	    my $field = $table->get_field( $fieldname ) or croak "invalid field $fieldname";
+            $field->is_system and croak "no explicit setting of system field $fieldname";
  	    my $value = $field->makevalue( $fields{ $fieldname } ) or croak "failed to build value object for $fieldname";
 
 	    my $set = DBR::Query::Part::Set->new($field,$value) or confess 'failed to create set object';
 	    push @sets, $set;
       }
+
+    my $inf = $table->cdc_type;
+    if ($inf->{is_log}) { croak("invalid insert into CDC log"); }
+    if ($inf->{has_version}) {
+        my $vf = $table->get_field('cdc_row_version');
+        push @sets, DBR::Query::Part::Set->new( $vf, $vf->makevalue(1) );
+    }
+
+    my $dbrh;
+    if ($inf->{logged} && $self->{session}->_sync_cdc) {
+        # create a new DBRH here to ensure proper transactional handling
+        $dbrh = $self->{instance}->connect or return $self->_error('failed to connect');
+        $dbrh->begin;
+    }
 
       my $query = DBR::Query::Insert->new(
 					  instance => $self->{instance},
@@ -132,7 +147,28 @@ sub insert {
 					  tables   => $table,
 					 ) or confess 'failed to create query object';
 
-      return $query->run( void => !defined(wantarray) );
+      my $res = $query->run( void => !defined(wantarray) && !$inf->{logged} );
+
+    if ($inf->{logged}) {
+        my %row;
+        for my $s (@{ $query->sets }) {
+            $row{$s->field->name} = $s->value->raw->[0];
+        }
+        my $pk = $table->primary_key;
+        if (@$pk == 1 && !$row{$pk->[0]->name}) {
+            $row{$pk->[0]->name} = $res;
+        }
+
+        $self->{instance}->getconn->_cdc_capture(
+            table => $table,
+            oldversion => 0,
+            new => \%row,
+        );
+    }
+
+    $dbrh && $dbrh->commit;
+
+    return $res;
 }
 
 

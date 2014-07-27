@@ -75,7 +75,7 @@ sub set{
 	    $self->_set($record, $table_id, $sets{$table_id}) or return $self->_error('failed to set');
       }
 
-      $dbrh->commit if $ct > 1;
+      $dbrh->commit if $dbrh;
 
       return 1;
 }
@@ -103,6 +103,23 @@ sub _set{
 
       my ($outwhere,$table) = $self->_pk_where([$record],$table_id) or return $self->_error('failed to create where tree');
 
+    my $cdc = $table->cdc_type;
+    croak("modification of CDC logs not permitted") if $cdc->{is_log};
+    croak("this table is not logged for updates") if $cdc->{logged} && !$cdc->{update_ok};
+    my ($conn,$dbrh);
+    my $old;
+    my $oldver;
+    if ($cdc->{logged}) {
+        ($conn, $dbrh, $old, my $verfield) = $self->_lock_fetch_all($table, $outwhere);
+        $oldver = $old->{cdc_row_version};
+
+        if ($oldver) {
+            # this is a tracked record
+            my $setval = $verfield->makevalue($oldver+1) or croak 'failed to create value object';
+            push @$sets, DBR::Query::Part::Set->new( $verfield, $setval );
+        }
+    }
+
       my $query = DBR::Query::Update->new(
 					  session  => $self->{session},
 					  instance => $self->{instance},
@@ -117,7 +134,59 @@ sub _set{
 	    $self->_setlocalval($record, $set->field, $set->value->raw->[0]);
       }
 
+    if ($cdc->{logged}) {
+        my $new = {%$old};
+
+        for my $set (@$sets) {
+            $new->{$set->field->name} = $set->value->raw->[0];
+        }
+
+        $conn->_cdc_capture(
+            table => $table,
+            oldversion => $oldver,
+            old => $old,
+            new => $new,
+        ) if $oldver;
+
+        $dbrh->commit;
+    }
+
       return $rv;
+}
+
+sub _lock_fetch_all {
+    my ($self, $table, $outwhere) = @_;
+
+    # create a new DBRH here to ensure proper transactional handling
+    my $conn = $table->instance->getconn or return $self->_error('failed to connect');
+    my $dbrh = $conn->dbh;
+    $dbrh->begin;
+
+    my %fields;
+    for my $f (@{ $table->fields }) { $fields{$f->name} = $f }
+
+    # locking fetch the record to ensure we're passing a consistent view as the old
+    # since the UPDATE will take out an exclusive lock anyway, this seems minor from a concurrency perspective
+    my $lfetch = DBR::Query::Select->new(
+        session  => $self->{session},
+        instance => $self->{instance},
+        fields   => [values %fields],
+        tables   => $table,
+        where    => $outwhere,
+        lock     => 1,
+    ) or croak('failed to create Query object');
+
+    my $sth = $lfetch->run;
+    defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
+    my $rows = $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
+    @$rows == 1 or return 0; # reproduces non-logged behavior
+
+    my $old = {};
+    for my $fn (keys %fields) {
+        $old->{$fn} = $rows->[0][$fields{$fn}->index];
+    }
+
+    return ($conn, $dbrh, $old, $fields{cdc_row_version});
 }
 
 sub delete{
@@ -131,6 +200,14 @@ sub delete{
 
        my ($outwhere,$table) = $self->_pk_where([$record],$table_id) or return $self->_error('failed to create where tree');
 
+    my $cdc = $table->cdc_type;
+    croak("modification of CDC logs not permitted") if $cdc->{is_log};
+    croak("this table is not logged for deletes") if $cdc->{logged} && !$cdc->{delete_ok};
+    my ($conn,$dbrh,$old);
+    if ($cdc->{logged}) {
+        ($conn, $dbrh, $old) = $self->_lock_fetch_all($table, $outwhere);
+    }
+
        my $query = DBR::Query::Delete->new(
 					   session  => $self->{session},
 					   instance => $self->{instance},
@@ -139,6 +216,19 @@ sub delete{
 					  ) or return $self->_error('failed to create Query object');
 
        $query->run or return $self->_error('failed to execute');
+
+    if ($cdc->{logged}) {
+        my $ver = $cdc->{has_version} ? $old->{cdc_row_version} : 1;
+        if ($ver) {
+            $conn->_cdc_capture(
+                table => $table,
+                oldversion => $ver,
+                old => $old,
+            );
+        }
+
+        $dbrh->commit;
+    }
 
        return 1;
 }
