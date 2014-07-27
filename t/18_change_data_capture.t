@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 26;
+use Test::More tests => 29;
 use Test::Exception;
 use Test::Deep;
 
@@ -48,4 +48,32 @@ lives_and { cmp_deeply($dbh->good_c->{table}->cdc_type, {logged => 1, log_table 
 lives_and { cmp_deeply($dbh->good_cu->{table}->cdc_type, {logged => 1, log_table => ignore(), has_version => 1, update_ok => 1, delete_ok => ''}) } 'good table with log, update';
 lives_and { cmp_deeply($dbh->good_cd->{table}->cdc_type, {logged => 1, log_table => ignore(), has_version => '', update_ok => '', delete_ok => 1}) } 'good table with log, delete';
 lives_and { cmp_deeply($dbh->good_cud->{table}->cdc_type, {logged => 1, log_table => ignore(), has_version => 1, update_ok => 1, delete_ok => 1}) } 'good table with log, update+delete';
+
+my @shipments;
+$dbh->_session->cdc_log_shipping_sub( sub { push @shipments, [@_] } );
+
+@shipments = ();
+$dbh->good_c->insert( foo => undef );
+$dbh->good_c->insert( foo => 'ABCDEF' );
+cmp_deeply(\@shipments, [
+    [ { user_id => 42, itag => '', ihandle => 'cdc', table => 'good_c', over => 0, old => undef, new => { id => ignore(), foo => undef } } ],
+    [ { user_id => 42, itag => '', ihandle => 'cdc', table => 'good_c', over => 0, old => undef, new => { id => ignore(), foo => 'ABCDEF' } } ],
+], 'basic insert change records; 2 transactions');
+
+@shipments = ();
+$dbh->begin;
+$dbh->multifield_cud->insert( foo => 3, bar => 4 );
+$dbh->multifield_cud->insert( foo => 3, enm => 'ccc' );
+cmp_deeply(\@shipments, [], 'no logging until post-commit');
+$dbh->commit;
+cmp_deeply(\@shipments, [
+    [
+        { user_id => 42, itag => '', ihandle => 'cdc', table => 'multifield_cud', over => 0, old => undef,
+            new => { id => ignore(), cdc_row_version => 1, foo => 3, bar => 4, enm => 2 } },
+        { user_id => 42, itag => '', ihandle => 'cdc', table => 'multifield_cud', over => 0, old => undef,
+            new => { id => ignore(), cdc_row_version => 1, foo => 3, bar => undef, enm => 3 } },
+    ]
+], 'insert change records grouped within a transaction, values defaulted to undef, translators applied');
+
+
 

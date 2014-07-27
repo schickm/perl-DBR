@@ -156,6 +156,20 @@ sub rollback{
 sub _cdc_capture {
     my ($self, %p) = @_;
     # oldversion, new, old, table
+
+    my $ship = $self->{session}->cdc_log_shipping_sub;
+
+    if ($ship) {
+        my $inst = $p{table}->sql_instance;
+
+        $self->add_post_commit_hook($ship, {
+            user_id => $self->{session}->user_id,
+            table => $p{table}->name, ihandle => $inst->handle, itag => $inst->tag || '',
+            new => $p{new}, old => $p{old}, over => $p{oldversion},
+        });
+    } else {
+        # TODO pre-commit hook
+    }
 }
 
 ######### ability check stubs #########

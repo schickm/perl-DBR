@@ -1,0 +1,5 @@
+table=cdc.multifield_cud; field=enm; cmd=TRANSLATOR; translator=ENUM
+table=cdc.multifield_cud; field=enm; cmd=ENUMOPT; name=aaa; handle=aaa
+table=cdc.multifield_cud; field=enm; cmd=ENUMOPT; name=bbb; handle=bbb
+table=cdc.multifield_cud; field=enm; cmd=ENUMOPT; name=ccc; handle=ccc
+table=cdc.multifield_cud; field=enm; cmd=DEFAULT; value=bbb

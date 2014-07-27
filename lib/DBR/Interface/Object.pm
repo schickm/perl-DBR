@@ -154,9 +154,13 @@ sub insert {
         for my $s (@{ $query->sets }) {
             $row{$s->field->name} = $s->value->raw->[0];
         }
-        my $pk = $table->primary_key;
-        if (@$pk == 1 && !$row{$pk->[0]->name}) {
-            $row{$pk->[0]->name} = $res;
+        for my $fd (@{ $table->fields }) {
+            if ($fd->is_pkey && !$row{$fd->name}) {
+                $row{$fd->name} = $res;
+            }
+            elsif (!exists $row{$fd->name}) {
+                $row{$fd->name} = undef;
+            }
         }
 
         $self->{instance}->getconn->_cdc_capture(

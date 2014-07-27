@@ -42,7 +42,11 @@ sub user_id {
     return @_ > 1 ? ($_[0]{user_id} = $_[1]) : ($_[0]{user_id});
 }
 
-sub _sync_cdc { 1 }
+sub cdc_log_shipping_sub {
+    return @_ > 1 ? ($_[0]{cdc_log_shipping_sub} = $_[1]) : ($_[0]{cdc_log_shipping_sub});
+}
+
+sub _sync_cdc { !$_[0]{cdc_log_shipping_sub} }
 
 sub timezone {
       my $self = shift;

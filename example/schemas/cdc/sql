@@ -61,6 +61,6 @@ CREATE TABLE cdc_log_good_cd ( id INTEGER PRIMARY KEY AUTOINCREMENT, cdc_start_t
 CREATE TABLE cdc_log_good_cud ( id INTEGER NOT NULL, cdc_start_time INTEGER UNSIGNED NOT NULL, cdc_start_user INTEGER UNSIGNED, foo VARCHAR(20), cdc_end_time INTEGER UNSIGNED NOT NULL, cdc_end_user INTEGER UNSIGNED, cdc_row_version SMALLINT UNSIGNED NOT NULL, PRIMARY KEY (id, cdc_row_version) );
 
 
-CREATE TABLE with_log_1 ( id INTEGER PRIMARY KEY AUTOINCREMENT );
-CREATE TABLE cdc_log_with_log_1 ( id INTEGER );
+CREATE TABLE multifield_cud ( id INTEGER PRIMARY KEY AUTOINCREMENT, foo INTEGER, enm SMALLINT UNSIGNED NOT NULL, bar INTEGER, cdc_row_version TINYINT UNSIGNED NOT NULL );
+CREATE TABLE cdc_log_multifield_cud ( id INTEGER NOT NULL, foo INTEGER, enm SMALLINT UNSIGNED NOT NULL, bar INTEGER, cdc_start_time INTEGER UNSIGNED NOT NULL, cdc_start_user INTEGER UNSIGNED, cdc_end_time INTEGER UNSIGNED NOT NULL, cdc_end_user INTEGER UNSIGNED, cdc_row_version TINYINT UNSIGNED NOT NULL, PRIMARY KEY (id, cdc_row_version) );
 
