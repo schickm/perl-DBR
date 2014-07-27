@@ -233,6 +233,92 @@ sub relations{
       return \@relations;
 }
 
+sub cdc_type  { $TABLES_BY_ID{ $_[0]->{table_id} }->{cdc_type} ||= $_[0]->_cdc_type }
+sub __describe { join(':', $_[0]->typename, $_[0]->is_pkey ? 'pk' : (), $_[0]->is_signed ? () : 'un', $_[0]->is_nullable || $_[0]->is_pkey ? () : 'nn') }
+sub _cdc_type {
+    my $self = shift;
+
+    my $rec = $TABLES_BY_ID{ $self->{table_id} };
+    if ($rec->{name} =~ /^cdc_log_/) {
+        return { is_log => 1 };
+    }
+    if ($rec->{name} =~ /^cdc_/) {
+        croak("table $rec->{name} is an unrecognized CDC table");
+    }
+
+    my $fields = $self->fields;
+    my @cdc_fields = grep { $_->name =~ /^cdc_/ } @$fields;
+    my $schema = $self->schema;
+    my $log = $schema && $schema->get_table('cdc_log_' . $rec->{name});
+
+    if (!$log) {
+        if (@cdc_fields) { croak("non-logged table $rec->{name} has cdc_ columns") }
+        return { };
+    }
+
+    my %fdmap;
+    my $hasver;
+    for my $fd (@$fields) {
+        my $name = $fd->name;
+
+        if ($name eq 'cdc_row_version') {
+            croak("table $rec->{name} has bad cdc_row_version field, should be integer unsigned not null") if __describe($fd) !~ /^(.*int):un:nn$/;
+            $hasver = $1;
+        }
+        elsif ($name =~ /^cdc_/) {
+            croak("$rec->{name}: unknown cdc_ field");
+        }
+        else {
+            $fdmap{$name} = __describe($fd);
+        }
+    }
+
+    my %log_has;
+
+    for my $logfd (@{ $log->fields }) {
+        my $name = $logfd->name;
+        my $desc = __describe($logfd);
+        $log_has{$name}=1;
+
+        if ($name eq 'cdc_start_time') {
+            $desc eq 'integer:un:nn' or croak("$rec->{name}: bad cdc_start_time field, should be integer unsigned not null");
+        }
+        elsif ($name eq 'cdc_end_time') {
+            $desc eq 'integer:un:nn' or croak("$rec->{name}: bad cdc_end_time field, should be integer unsigned not null");
+        }
+        elsif ($name eq 'cdc_start_user') {
+            # not currently checking these, perhaps we should be
+        }
+        elsif ($name eq 'cdc_end_user') {
+            # not currently checking these, perhaps we should be
+        }
+        elsif ($name eq 'cdc_row_version') {
+            $hasver or croak("$rec->{name}: cdc_row_version in log but not table");
+            $desc eq "$hasver:pk:un" or croak("$rec->{name}: cdc_row_version mismatched type between log and table"); # must be part of the PK if present
+        }
+        elsif ($name =~ /^cdc_/) {
+            croak("$rec->{name}: unknown cdc_ field in log");
+        }
+        else {
+            $fdmap{$name} or croak("$rec->{name}: $name in log but not table");
+            $desc eq $fdmap{$name} or croak("$rec->{name}: $name mismatched types between log and table");
+            delete $fdmap{$name}; # discharge obligation
+        }
+    }
+
+    $log_has{cdc_start_time} or croak("$rec->{name}: log must contain cdc_start_time");
+    $log_has{cdc_start_user} or croak("$rec->{name}: log must contain cdc_start_user");
+    !$hasver or $log_has{cdc_row_version} or croak("$rec->{name}: log must contain cdc_row_version if table does");
+
+    my $update_ok = $hasver;
+    my $delete_ok = $log_has{cdc_end_user};
+
+    !$log_has{cdc_end_time} and ($update_ok || $delete_ok) and croak("$rec->{name}: log must contain cdc_end_time if cdc_end_user or cdc_row_version");
+    $log_has{cdc_end_time} and !($update_ok || $delete_ok) and croak("$rec->{name}: log may only contain cdc_end_time if cdc_end_user or cdc_row_version");
+    %fdmap and croak("$rec->{name}: log must contain all fields from table, missing ".((sort keys %fdmap)[0]));
+
+    return { logged => 1, delete_ok => !!$delete_ok, update_ok => !!$update_ok, has_version => !!$hasver, log_table => $log };
+}
 
 sub name      { $TABLES_BY_ID{  $_[0]->{table_id} }->{name} };
 sub schema_id { $TABLES_BY_ID{  $_[0]->{table_id} }->{schema_id} };

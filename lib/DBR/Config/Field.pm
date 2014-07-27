@@ -74,7 +74,7 @@ my %datatypes = (
 		 varbinary => { id => 21 },
 		);
 
-my %datatype_lookup = map { $datatypes{$_}->{id} => {%{$datatypes{$_}}, handle => $_ }} keys %datatypes;
+my %datatype_lookup = map { $datatypes{$_}->{id} => {%{$datatypes{$_}}, handle => $_ }} sort keys %datatypes;
 
 sub list_datatypes{
       return Clone::clone( [ sort { $a->{id} <=> $b->{id} } values %datatype_lookup ] );
@@ -258,7 +258,9 @@ sub name         { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_name]        }
 sub is_pkey      { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_pkey]     }
 sub is_nullable  { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_nullable] }
 sub is_readonly  { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_readonly] }
+sub is_signed    { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_is_signed]   }
 sub datatype     { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_data_type]   }
+sub typename     { $datatype_lookup{ $_[0]->datatype }{ handle }          }
 sub testsub      { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_testsub]     }
 sub default_val  { $FIELDS_BY_ID{  $_[0]->[O_field_id] }->[C_default]     }
 
