@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 32;
+use Test::More tests => 33;
 use Test::Exception;
 use Test::Deep;
 
@@ -77,6 +77,13 @@ cmp_deeply(\@shipments, [
             new => { id => ignore(), cdc_row_version => 1, foo => 3, bar => undef, enm => 3 } },
     ]
 ], 'insert change records grouped within a transaction, values defaulted to undef, translators applied');
+
+@shipments = ();
+$dbh->begin;
+$dbh->multifield_cud->insert( foo => 3, bar => 4 );
+$dbh->multifield_cud->insert( foo => 3, enm => 'ccc' );
+$dbh->rollback;
+cmp_deeply(\@shipments, [], 'no logging after rollback');
 
 throws_ok { $dbh->cdc_log_multifield_cud->insert() } qr/invalid insert into CDC log/;
 throws_ok { $dbh->multifield_cud->insert( cdc_row_version => 1 ) } qr/system field/;
