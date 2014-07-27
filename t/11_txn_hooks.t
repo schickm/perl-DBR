@@ -80,6 +80,7 @@ is($log, 'Q', 'post_commit immediate uses args');
 
 my $apphook  = sub { $log .= join('','(',@_,')') };
 my $apphook2 = sub { $log .= join('','[',@_,']') };
+my $high_apphook  = sub { $log .= join('','(',@_,')') };
 my $nilhook  = sub { $log .= 'R' };
 
 $log = '';
@@ -147,3 +148,11 @@ $dbh->add_pre_commit_hook(sub { $dbh->add_pre_commit_hook($apphook, 'd') });
 $dbh->add_pre_commit_hook($apphook, 'c');
 $dbh->commit;
 is($log, '(cd)', 'not too late to merge pre-commit');
+
+$log = '';
+$dbh->begin;
+DBR::Misc::Connection->set_hook_priority( $high_apphook, '000' );
+$dbh->add_pre_commit_hook($apphook, 'S');
+$dbh->add_pre_commit_hook($high_apphook, 'T');
+$dbh->commit;
+is($log, '(T)(S)', 'hook execution respects priorities');

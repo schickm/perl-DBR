@@ -85,22 +85,33 @@ sub begin {
       return 1;
 }
 
+my %HOOK_PRIORITY;
+
+sub set_hook_priority {
+    my ($pkg, $sub, $prio) = @_;
+    $HOOK_PRIORITY{ $sub } = $prio;
+}
+
 sub _run_hooks {
     my ($self, $list, $lifo) = @_;
 
-    my (@todo, %dedup);
+    my (%todo, %dedup);
 
     while (1) {
         while ($list && @$list) {
             my $ent = shift(@$list);
             my ($sub, @args) = ref($ent) eq 'CODE' ? $ent : @$ent;
-            push @todo, $sub unless $dedup{$sub};
+            my $p = $HOOK_PRIORITY{$sub} || '500';
+            push @{$todo{$p}}, $sub unless $dedup{$sub};
             push @{$dedup{$sub}}, @args;
         }
 
-        return unless @todo;
+        return unless %todo;
+        my ($p) = sort keys %todo;
+        my $plist = $todo{$p};
 
-        my $sub = $lifo ? pop(@todo) : shift(@todo);
+        my $sub = $lifo ? pop(@$plist) : shift(@$plist);
+        delete $todo{$p} if !@$plist;
         my $args = delete $dedup{$sub};
         $sub->($lifo ? reverse(@$args) : @$args);
     }
