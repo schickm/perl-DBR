@@ -53,24 +53,25 @@ sub ping {
 # if you throw an exception or call back into DBR (including to add hooks) from a rollback hook,
 # DBR is not guaranteed to do anything remotely useful.
 sub add_rollback_hook {
-    my ($self, $hook) = @_;
+    my ($self, $hook, @args) = @_;
 
     return unless $self->{_intran};
-    push @{ $self->{_on_rollback} ||= [] }, $hook;
+    # need to maintain temporary compatibility with some downstream code that pokes directly into the lists to implement hook deduplication; will modify it O(soon) to use the API
+    push @{ $self->{_on_rollback} ||= [] }, @args ? [$hook, @args] : $hook;
 }
 
 sub add_pre_commit_hook {
-    my ($self, $hook) = @_;
+    my ($self, $hook, @args) = @_;
 
-    return $hook->() unless $self->{_intran};
-    push @{ $self->{_pre_commit} ||= [] }, $hook;
+    return $hook->(@args) unless $self->{_intran};
+    push @{ $self->{_pre_commit} ||= [] }, @args ? [$hook, @args] : $hook;
 }
 
 sub add_post_commit_hook {
-    my ($self, $hook) = @_;
+    my ($self, $hook, @args) = @_;
 
-    return $hook->() unless $self->{_intran};
-    push @{ $self->{_post_commit} ||= [] }, $hook;
+    return $hook->(@args) unless $self->{_intran};
+    push @{ $self->{_post_commit} ||= [] }, @args ? [$hook, @args] : $hook;
 }
 
 sub begin {
@@ -84,6 +85,27 @@ sub begin {
       return 1;
 }
 
+sub _run_hooks {
+    my ($self, $list, $lifo) = @_;
+
+    my (@todo, %dedup);
+
+    while (1) {
+        while ($list && @$list) {
+            my $ent = shift(@$list);
+            my ($sub, @args) = ref($ent) eq 'CODE' ? $ent : @$ent;
+            push @todo, $sub unless $dedup{$sub};
+            push @{$dedup{$sub}}, @args;
+        }
+
+        return unless @todo;
+
+        my $sub = $lifo ? pop(@todo) : shift(@todo);
+        my $args = delete $dedup{$sub};
+        $sub->($lifo ? reverse(@$args) : @$args);
+    }
+}
+
 sub commit{
       my $self = shift;
       return $self->_error('Transaction is not open - cannot commit') if !$self->{'_intran'};
@@ -91,9 +113,7 @@ sub commit{
       $self->_logDebug('COMMIT');
 
       my $precommit = $self->{_pre_commit};
-      while ($precommit && @$precommit) {
-          (shift @$precommit)->();
-      }
+      $self->_run_hooks( $precommit );
 
       $self->{dbh}->do('COMMIT') or return $self->_error('Failed to commit transaction');
 
@@ -101,9 +121,7 @@ sub commit{
 
       my $postcommit = $self->{_post_commit};
       $self->{_on_rollback} = $self->{_pre_commit} = $self->{_post_commit} = undef;
-      while ($postcommit && @$postcommit) {
-          (shift @$postcommit)->();
-      }
+      $self->_run_hooks( $postcommit );
 
       return 1;
 }
@@ -119,9 +137,7 @@ sub rollback{
 
       my $hooks = $self->{_on_rollback};
       $self->{_on_rollback} = $self->{_pre_commit} = $self->{_post_commit} = undef;
-      while ($hooks && @$hooks) {
-          (pop @$hooks)->();
-      }
+      $self->_run_hooks( $hooks, 1 );
 
       return 1;
 }
