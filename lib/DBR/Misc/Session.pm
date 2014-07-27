@@ -37,6 +37,11 @@ sub tag{
       return $self->{tag};
 }
 
+# an opaque integer which is stored in change data capture records
+sub user_id {
+    return @_ > 1 ? ($_[0]{user_id} = $_[1]) : ($_[0]{user_id});
+}
+
 sub timezone {
       my $self = shift;
       my $tz   = shift;
