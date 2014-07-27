@@ -115,6 +115,13 @@ sub new {
   return( $self );
 }
 
+sub has_table {
+    my $self  = shift;
+    my $tname = shift or croak('name is required');
+
+    return $TABLES_BY_NAME{ $self->{schema_id} }->{ $tname } ? 1 : 0;
+}
+
 sub get_table{
       my $self  = shift;
       my $tname = shift or return $self->_error('name is required');

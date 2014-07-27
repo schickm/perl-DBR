@@ -8,12 +8,13 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 29;
+use Test::More tests => 32;
 use Test::Exception;
 use Test::Deep;
 
 # As always, it's important that the sample database is not tampered with, otherwise our tests will fail
 my $dbr = setup_schema_ok('cdc');
+$dbr->{session}->{use_exceptions} = 1;
 
 my $dbh = $dbr->connect('cdc');
 ok($dbh, 'dbr connect');
@@ -49,6 +50,8 @@ lives_and { cmp_deeply($dbh->good_cu->{table}->cdc_type, {logged => 1, log_table
 lives_and { cmp_deeply($dbh->good_cd->{table}->cdc_type, {logged => 1, log_table => ignore(), has_version => '', update_ok => '', delete_ok => 1}) } 'good table with log, delete';
 lives_and { cmp_deeply($dbh->good_cud->{table}->cdc_type, {logged => 1, log_table => ignore(), has_version => 1, update_ok => 1, delete_ok => 1}) } 'good table with log, update+delete';
 
+## Log record capture
+
 my @shipments;
 $dbh->_session->cdc_log_shipping_sub( sub { push @shipments, [@_] } );
 
@@ -75,5 +78,6 @@ cmp_deeply(\@shipments, [
     ]
 ], 'insert change records grouped within a transaction, values defaulted to undef, translators applied');
 
-
-
+throws_ok { $dbh->cdc_log_multifield_cud->insert() } qr/invalid insert into CDC log/;
+throws_ok { $dbh->multifield_cud->insert( cdc_row_version => 1 ) } qr/system field/;
+throws_ok { $dbh->multifield_cud->get(1)->set( cdc_row_version => 2 ) } qr/readonly/;

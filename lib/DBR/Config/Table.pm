@@ -249,7 +249,7 @@ sub _cdc_type {
     my $fields = $self->fields;
     my @cdc_fields = grep { $_->name =~ /^cdc_/ } @$fields;
     my $schema = $self->schema;
-    my $log = $schema && $schema->get_table('cdc_log_' . $rec->{name});
+    my $log = $schema && $schema->has_table("cdc_log_$rec->{name}") && $schema->get_table("cdc_log_$rec->{name}");
 
     if (!$log) {
         if (@cdc_fields) { croak("non-logged table $rec->{name} has cdc_ columns") }
