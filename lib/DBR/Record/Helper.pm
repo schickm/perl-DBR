@@ -269,18 +269,11 @@ sub getfield{
         fields   => [ @$newpk, $cfield ] # use the new cloned field
     ) or return $self->_error('failed to create Query object');
 
-    my $sth = $query->run or return $self->_error('failed to execute');
-
-    $sth->execute() or return $self->_error('Failed to execute sth');
-
-    my %lut;
+    my $lut = $query->fetch_fieldmap( $newpk, $cfield ) or return $self->_error('failed to execute');
 
     my $e = qq{
-        while (my \$row = \$sth->fetchrow_arrayref()) {
-            \$lut${\ join "", map("{\$row->[".$_->index."]}",@$newpk) } = \$row->[${\$cfield->index}];
-        }
         foreach my \$lr (\@look) {
-            \$self->_setlocalval(\$lr,\$field,\$lut${\ join "", map("{\$lr->[".$_->index."]}",@$ourpk) });
+            \$self->_setlocalval(\$lr,\$field,\$lut->${\ join "", map("{\$lr->[".$_->index."]}",@$ourpk) });
         }
     };
     #print $e;

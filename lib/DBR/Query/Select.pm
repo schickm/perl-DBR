@@ -132,6 +132,24 @@ sub fetch_column {
     return \@list;
 }
 
+sub fetch_fieldmap {
+    my ($self, $pk, $field) = @_;
+    my $sth = $self->run or return $self->_error('failed to execute');
+
+    $sth->execute() or return $self->_error('Failed to execute sth');
+
+    my $lut = {};
+
+    my $e = qq{
+        while (my \$row = \$sth->fetchrow_arrayref()) {
+            \$lut->${\ join "", map("{\$row->[".$_->index."]}",@$pk) } = \$row->[${\$field->index}];
+        }
+    };
+    eval $e;
+    Carp::confess($@) if $@;
+    return $lut;
+}
+
 sub splitfield { return $_[0]->{splitfield} }
 
 sub get_record_obj{
