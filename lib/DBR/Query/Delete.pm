@@ -35,6 +35,7 @@ sub run{
       my $self = shift;
       my $conn = $self->instance->connect('conn') or return $self->_error('failed to connect');
 
+      croak('modification not permitted in time-query mode') if $self->{session}->query_time_mode;
       $conn->quiet_next_error if $self->quiet_error;
 
       return $conn->do( $self->sql ) || 0;

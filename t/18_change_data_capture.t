@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 168;
+use Test::More tests => 171;
 use Test::Exception;
 use Test::Deep;
 
@@ -249,3 +249,15 @@ throws_ok { $dbh->cdc_log_good_cd->get(9)->delete } qr/modification of CDC logs 
 throws_ok { $dbh->cdc_log_good_cd->get(9)->set( foo => 'XYZZY' ) } qr/readonly/;
 throws_ok { $dbh->cdc_log_good_cd->get(9)->set( cdc_start_time => 19 ) } qr/readonly/;
 throws_ok { $dbh->cdc_log_good_cd->get(9)->cdc_start_time( 19 ) } qr/readonly/;
+
+## Query mode
+
+my $r12 = $dbh->multifield_cud->insert( foo => 12 );
+{
+    local $dbh->_session->{query_time_mode} = 1;
+
+    throws_ok { $dbh->multifield_cud->insert( foo => 13 ) } qr/modification/;
+    throws_ok { $dbh->multifield_cud->get( $r12 )->set(foo => 14) } qr/modification/;
+    throws_ok { $dbh->multifield_cud->get( $r12 )->delete } qr/modification/;
+}
+

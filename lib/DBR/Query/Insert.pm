@@ -98,6 +98,7 @@ sub run{
       my $self = shift;
       my %params = @_;
 
+      croak('modification not permitted in time-query mode') if $self->{session}->query_time_mode;
       my $conn = $self->instance->connect('conn') or return $self->_error('failed to connect');
 
       $conn->quiet_next_error if $self->quiet_error;

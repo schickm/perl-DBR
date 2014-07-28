@@ -40,8 +40,6 @@ sub sql{
       my $conn   = $self->instance->connect('conn') or return $self->_error('failed to connect');
       my $sql;
 
-      croak('joins must be run simulated in time-query mode') if @{$self->{tables}} > 1 && $self->{session}->query_time_mode;
-
       my $tables = join(',', map { $_->sql( $conn ) } @{$self->{tables}} );
       my $fields = join(',', map { $_->sql( $conn ) } @{$self->{fields}} );
 
@@ -62,6 +60,7 @@ sub can_be_subquery { scalar( @{ $_[0]->fields || [] } ) == 1 }; # Must have exa
 
 sub run {
       my $self = shift;
+      croak('joins must be run simulated in time-query mode') if @{$self->{tables}} > 1 && $self->{session}->query_time_mode;
       return $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
 }
 sub reset {
