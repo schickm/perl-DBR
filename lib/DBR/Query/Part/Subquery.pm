@@ -34,24 +34,17 @@ sub sql   {
       my $conn = shift or croak 'conn is required';
 
       if ( $self->runflag ){
-	    my $sth = $self->query->run();
-	    $sth->execute;
+            my $list = $self->query->fetch_column;
 
-	    my ($val,@list);
-
-	    $sth->bind_col(1, \$val) || die "Failed to bind column";
-	    push @list, $val while $sth->fetch;
-
-	    $sth->finish;
-
-        return '0' unless @list; # HACK - this should abort the query this feeds into, but this will patch the bug for now
+        return '0' unless @$list; # HACK - this should abort the query this feeds into, but this will patch the bug for now
         
 	    if( $self->quoted ){
-		  return $self->field->sql($conn) . ' IN (' . join(',', map { $conn->quote( $_ ) } @list ) . ')';
+		  return $self->field->sql($conn) . ' IN (' . join(',', map { $conn->quote( $_ ) } @$list ) . ')';
 	    }else{
-		  return $self->field->sql($conn) . ' IN (' . join(',', @list ) . ')';
+		  return $self->field->sql($conn) . ' IN (' . join(',', @$list ) . ')';
 	    }
       }else{
+            croak('subqueries must be run simulated in time-query mode') if $self->query->session->query_time_mode;
 	    return $self->field->sql($conn) . ' IN (' . $self->query->sql($conn) . ')'
       }
 }

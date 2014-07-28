@@ -205,7 +205,7 @@ sub _reljoin{
 		  $prevfield ->table_alias( $prevalias ) if $prevalias;
 		  $field     ->table_alias( $alias     ) if $alias;
 
-		  if ($relation->is_colocated && $relation->is_to_one) { # Do a join
+		  if ($relation->is_colocated && $relation->is_to_one && !$self->{session}->query_time_mode) { # Do a join
 
 			$prevalias or die('Sanity error: prevtable alias is required');
 			$alias     or die('Sanity error: table alias is required');
@@ -239,7 +239,7 @@ sub _reljoin{
 							    where    => $where,
 							   ) or confess('failed to create query object');
 
-			my $runflag = ! $relation->is_colocated;
+			my $runflag = ! $relation->is_colocated || $self->{session}->query_time_mode;
  			my $subquery = DBR::Query::Part::Subquery->new($prevfield, $query, $runflag) or confess ('failed to create subquery object');
 			push @and, $subquery;
 		  }

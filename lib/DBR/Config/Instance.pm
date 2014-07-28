@@ -352,14 +352,13 @@ sub _record_change_data {
 sub _record_version {
     my ($self, $tbl, $cdc, $data, $edge) = @_;
 
-    my $log = $cdc->{log_table};
-    my $logf = $log->fields;
-
     my $log = DBR::Config::Table->new(
         session     => $self->{session},
         table_id    => $cdc->{log_table}->{table_id},
         instance_id => $self->guid,
     ) or croak('failed to rebind table object');
+
+    my $logf = $log->fields;
 
     my @gpk;
     my @where;

@@ -40,6 +40,8 @@ sub sql{
       my $conn   = $self->instance->connect('conn') or return $self->_error('failed to connect');
       my $sql;
 
+      croak('joins must be run simulated in time-query mode') if @{$self->{tables}} > 1 && $self->{session}->query_time_mode;
+
       my $tables = join(',', map { $_->sql( $conn ) } @{$self->{tables}} );
       my $fields = join(',', map { $_->sql( $conn ) } @{$self->{fields}} );
 
@@ -115,6 +117,20 @@ sub fetch_all_records {
     }
 
     return wantarray ? @out : \@out;
+}
+
+sub fetch_column {
+    my ($self) = @_;
+    my $sth = $self->run();
+    $sth->execute;
+
+    my ($val,@list);
+
+    $sth->bind_col(1, \$val) || die "Failed to bind column";
+    push @list, $val while $sth->fetch;
+
+    $sth->finish;
+    return \@list;
 }
 
 sub splitfield { return $_[0]->{splitfield} }

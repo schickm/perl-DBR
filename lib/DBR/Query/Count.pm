@@ -35,6 +35,8 @@ sub sql{
 sub run {
       my $self = shift;
 
+      croak('counts must be run simulated in time-query mode') if $self->{session}->query_time_mode;
+
       my $conn     = $self->instance->connect('conn') or confess 'failed to connect';
       my ($count)  = $conn->selectrow_array($self->sql);
       defined($count) or confess "failed to retrieve count";

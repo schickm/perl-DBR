@@ -113,7 +113,7 @@ sub _execute{
         $self->[f_rowcache] = $self->[f_query]->fetch_segment( $self->[f_splitval] ); # Query handles the sth
         $self->_mem_iterator;
 
-    }elsif ($force_mem) {
+    }elsif ($force_mem || $self->[f_query]->session->query_time_mode) {
 
         $self->[f_rowcache] = $self->[f_query]->fetch_all_records;
         $self->_mem_iterator;
@@ -233,7 +233,7 @@ sub count{
       my $self = shift;
       return $self->[f_count] if defined $self->[f_count];
 
-      if( defined $self->[f_splitval] ){ # run automatically if we are a split query
+      if( defined($self->[f_splitval]) || $self->[f_query]->session->query_time_mode ){ # run automatically if we are a split query
 	    $self->_execute();
 	    return $self->[f_count];
       }

@@ -46,6 +46,13 @@ sub cdc_log_shipping_sub {
     return @_ > 1 ? ($_[0]{cdc_log_shipping_sub} = $_[1]) : ($_[0]{cdc_log_shipping_sub});
 }
 
+sub query_time_mode { @_ > 1 ? ($_[0]{query_time_mode} = $_[1]) : ($_[0]{query_time_mode}) }
+sub query_start_time { @_ > 1 ? ($_[0]{query_start_time} = $_[1]) : ($_[0]{query_start_time}) }
+sub query_end_time { @_ > 1 ? ($_[0]{query_end_time} = $_[1]) : ($_[0]{query_end_time}) }
+sub query_selected_time { @_ > 1 ? ($_[0]{query_selected_time} = $_[1]) : ($_[0]{query_selected_time}) }
+sub query_cache { @_ > 1 ? ($_[0]{query_cache} = $_[1]) : ($_[0]{query_cache}) }
+sub time_breakpoint_queue { @_ > 1 ? ($_[0]{time_breakpoint_queue} = $_[1]) : ($_[0]{time_breakpoint_queue}) }
+
 # change data recorder.  this isn't the right place but I'm not sure what is
 sub record_change_data {
     my ($self, @logs) = @_;
