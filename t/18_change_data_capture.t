@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 166;
+use Test::More tests => 168;
 use Test::Exception;
 use Test::Deep;
 
@@ -129,6 +129,47 @@ throws_ok {
     my $r_2 = $dbh2->multifield_cud->get($id_2);
     $r_2->set( foo => $r_2->foo+1 ) for 1 .. 257;
 } qr/cdc_row_version/;
+
+$dbh->multifield_cud->insert( foo => 9 );
+$dbh->multifield_cud->insert( foo => 10 );
+$dbh->multifield_cud->insert( foo => 11 );
+
+@shipments = ();
+$dbh->multifield_cud->where( foo => [9,10,11] )->set(bar => 7);
+cmp_deeply(\@shipments, [
+    [
+        { ccmp('multifield_cud'),
+            old => { id => ignore(), cdc_row_version => 1, foo => 9, bar => undef, enm => 2 },
+            new => { id => ignore(), cdc_row_version => 2, foo => 9, bar => 7, enm => 2 },
+        },
+        { ccmp('multifield_cud'),
+            old => { id => ignore(), cdc_row_version => 1, foo => 10, bar => undef, enm => 2 },
+            new => { id => ignore(), cdc_row_version => 2, foo => 10, bar => 7, enm => 2 },
+        },
+        { ccmp('multifield_cud'),
+            old => { id => ignore(), cdc_row_version => 1, foo => 11, bar => undef, enm => 2 },
+            new => { id => ignore(), cdc_row_version => 2, foo => 11, bar => 7, enm => 2 },
+        },
+    ]
+], '"bulk" update converted into non-bulk for CDC');
+
+@shipments = ();
+$dbh->multifield_cud->where( foo => [9,10,11] )->delete_matched_records;
+cmp_deeply(\@shipments, [
+    [
+        { ccmp('multifield_cud'),
+            old => { id => ignore(), cdc_row_version => 2, foo => 9, bar => 7, enm => 2 },
+        },
+        { ccmp('multifield_cud'),
+            old => { id => ignore(), cdc_row_version => 2, foo => 10, bar => 7, enm => 2 },
+        },
+        { ccmp('multifield_cud'),
+            old => { id => ignore(), cdc_row_version => 2, foo => 11, bar => 7, enm => 2 },
+        },
+    ]
+], '"bulk" delete converted into non-bulk for CDC');
+
+
 
 ## Log record storage
 

@@ -253,6 +253,22 @@ sub set {
        my %params = @_;
 
        my $tables = $self->[f_query]->tables;
+
+    if (grep { my $c = $_->cdc_type; $c->{logged} || $c->{is_log} } @$tables) {
+        # force fallback to record-at-a-time mode
+        my $ct = 0;
+        my $dbh = $self->[f_query]->instance->connect;
+        $dbh->begin;
+        $self->each(sub {
+            my $r = shift;
+            my $k = $r->set( %params );
+            $k or return $k;
+            $ct += $k;
+        });
+        $dbh->commit;
+        return $ct || '0E0';
+    }
+
        my $table = $tables->[0]; # only the primary table is supported
        my $alias = $table->alias;
 
@@ -339,6 +355,21 @@ sub delete_matched_records {
 
     if( defined $self->[f_query]->splitfield ){
         croak "Mass delete not implemented for split queries";
+    }
+
+    if (grep { my $c = $_->cdc_type; $c->{logged} || $c->{is_log} } $self->[f_query]->tables) {
+        # force fallback to record-at-a-time mode
+        my $ct = 0;
+        my $dbh = $self->[f_query]->instance->connect;
+        $dbh->begin;
+        $self->each(sub {
+            my $r = shift;
+            my $k = $r->delete;
+            $k or return $k;
+            $ct += $k;
+        });
+        $dbh->commit;
+        return $ct || '0E0';
     }
 
     return $self->[f_query]->transpose('Delete')->run;

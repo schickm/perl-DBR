@@ -41,7 +41,7 @@ sub new {
 
 sub tables{
       my $self   = shift;
-      exists( $_[0] )  or return wantarray?( @$self->{tables} ) : $self->{tables} || undef;
+      exists( $_[0] )  or return wantarray?( @{$self->{tables}} ) : $self->{tables} || undef;
       my @tables = $self->_arrayify(@_);
 
       scalar(@tables) || croak "must provide at least one table";
