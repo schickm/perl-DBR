@@ -118,7 +118,7 @@ sub _prep{
       my $mode = 'rw';
       foreach my $field (@fields){
 	    my $mymode = $mode;
-	    $mymode = 'ro' if $field->is_readonly or $instance->is_readonly;
+            # field accessors are always syntactically rw, they croak if readonly
             my $work_clone = $field->clone( with_index => 1 ); # Make a clean copy of the field object in case this one has an alias
             $flookup{ $field->name } = $work_clone;
 	    $self->_mk_accessor(
