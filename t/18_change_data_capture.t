@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 160;
+use Test::More tests => 164;
 use Test::Exception;
 use Test::Deep;
 
@@ -197,3 +197,7 @@ throws_ok { $dbh->multifield_cud->insert( cdc_row_version => 1 ) } qr/system fie
 throws_ok { $dbh->multifield_cud->get($id_2)->set( cdc_row_version => 2 ) } qr/readonly/;
 throws_ok { $dbh->good_c->get(1)->set( foo => 'BAR' ) } qr/this table is not logged for updates/;
 throws_ok { $dbh->good_c->get(1)->delete } qr/this table is not logged for deletes/;
+throws_ok { $dbh->cdc_log_good_cd->get(9)->delete } qr/modification of CDC logs not permitted/;
+throws_ok { $dbh->cdc_log_good_cd->get(9)->set( foo => 'XYZZY' ) } qr/readonly/;
+throws_ok { $dbh->cdc_log_good_cd->get(9)->set( cdc_start_time => 19 ) } qr/readonly/;
+throws_ok { $dbh->cdc_log_good_cd->get(9)->cdc_start_time( 19 ) } qr/readonly/;
