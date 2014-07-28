@@ -159,16 +159,37 @@ sub _cdc_capture {
 
     my $ship = $self->{session}->cdc_log_shipping_sub;
 
-    if ($ship) {
-        my $inst = $p{table}->sql_instance;
+    my $inst = $p{table}->sql_instance;
+    my $obj = {
+        user_id => $self->{session}->user_id, HANDLER => $ship, SESSION => $self->{session},
+        table => $p{table}->name, ihandle => $inst->handle, itag => $inst->tag || '',
+        new => $p{new}, old => $p{old},
+    };
 
-        $self->add_post_commit_hook($ship, {
-            user_id => $self->{session}->user_id,
-            table => $p{table}->name, ihandle => $inst->handle, itag => $inst->tag || '',
-            new => $p{new}, old => $p{old}, over => $p{oldversion},
-        });
+    if ($ship) {
+        $self->add_post_commit_hook(\&__cdc_ship, $obj);
     } else {
-        # TODO pre-commit hook
+        $self->add_pre_commit_hook(\&__cdc_ship, $obj);
+    }
+}
+
+sub __cdc_ship {
+    my (@logs) = @_;
+
+    my $handler = $logs[0]->{HANDLER};
+    my $session = $logs[0]->{SESSION};
+
+    my $txtime = time;
+    for my $l (@logs) {
+        delete $l->{HANDLER};
+        delete $l->{SESSION};
+        $l->{time} = $txtime;
+    }
+
+    if ($handler) {
+        $handler->(@logs);
+    } else {
+        $session->record_change_data(@logs);
     }
 }
 

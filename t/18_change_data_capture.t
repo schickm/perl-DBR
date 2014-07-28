@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 41;
+use Test::More tests => 160;
 use Test::Exception;
 use Test::Deep;
 
@@ -55,15 +55,15 @@ lives_and { cmp_deeply($dbh->good_cud->{table}->cdc_type, {logged => 1, log_tabl
 my @shipments;
 $dbh->_session->cdc_log_shipping_sub( sub { push @shipments, [@_] } );
 
-my %good_c_comm = (user_id => 42, itag => '', ihandle => 'cdc', table => 'good_c');
-my %mfcud_comm = (user_id => 42, itag => '', ihandle => 'cdc', table => 'multifield_cud');
+sub ccmp { return ( user_id => 42, itag => '', ihandle => 'cdc', table => shift(), time => ignore(), old => undef, new => undef ) }
+sub cset { return ( user_id => 42, itag => '', ihandle => 'cdc', table => shift(), time => time(), old => undef, new => undef ) }
 
 @shipments = ();
 $dbh->good_c->insert( foo => undef );
 $dbh->good_c->insert( foo => 'ABCDEF' );
 cmp_deeply(\@shipments, [
-    [ { %good_c_comm, over => 0, old => undef, new => { id => ignore(), foo => undef } } ],
-    [ { %good_c_comm, over => 0, old => undef, new => { id => ignore(), foo => 'ABCDEF' } } ],
+    [ { ccmp('good_c'), new => { id => ignore(), foo => undef } } ],
+    [ { ccmp('good_c'), new => { id => ignore(), foo => 'ABCDEF' } } ],
 ], 'basic insert change records; 2 transactions');
 
 @shipments = ();
@@ -74,8 +74,8 @@ cmp_deeply(\@shipments, [], 'no logging until post-commit');
 $dbh->commit;
 cmp_deeply(\@shipments, [
     [
-        { %mfcud_comm, over => 0, old => undef, new => { id => ignore(), cdc_row_version => 1, foo => 3, bar => 4, enm => 2 } },
-        { %mfcud_comm, over => 0, old => undef, new => { id => ignore(), cdc_row_version => 1, foo => 3, bar => undef, enm => 3 } },
+        { ccmp('multifield_cud'), new => { id => ignore(), cdc_row_version => 1, foo => 3, bar => 4, enm => 2 } },
+        { ccmp('multifield_cud'), new => { id => ignore(), cdc_row_version => 1, foo => 3, bar => undef, enm => 3 } },
     ]
 ], 'insert change records grouped within a transaction, values defaulted to undef, translators applied');
 
@@ -92,28 +92,28 @@ $r_1->foo; $r_2->foo;
 
 @shipments = ();
 $r_1->set( foo => 5 );
-cmp_deeply(\@shipments, [[ { %mfcud_comm, over => 1,
+cmp_deeply(\@shipments, [[ { ccmp('multifield_cud'),
     old => { id => $id_1, cdc_row_version => 1, foo => 3, bar => 4, enm => 2 },
     new => { id => $id_1, cdc_row_version => 2, foo => 5, bar => 4, enm => 2 },
 }]], 'update capture');
 
 @shipments = ();
 $r_2->set( foo => 6 );
-cmp_deeply(\@shipments, [[ { %mfcud_comm, over => 2,
+cmp_deeply(\@shipments, [[ { ccmp('multifield_cud'),
     old => { id => $id_1, cdc_row_version => 2, foo => 5, bar => 4, enm => 2 },
     new => { id => $id_1, cdc_row_version => 3, foo => 6, bar => 4, enm => 2 },
 }]], 'update capture not fooled by concurrent update');
 
 @shipments = ();
 $r_2->enm( 'aaa' );
-cmp_deeply(\@shipments, [[ { %mfcud_comm, over => 3,
+cmp_deeply(\@shipments, [[ { ccmp('multifield_cud'),
     old => { id => $id_1, cdc_row_version => 3, foo => 6, bar => 4, enm => 2 },
     new => { id => $id_1, cdc_row_version => 4, foo => 6, bar => 4, enm => 1 },
 }]], 'update works for simple set, translators');
 
 @shipments = ();
 $r_2->delete;
-cmp_deeply(\@shipments, [[ { %mfcud_comm, over => 4,
+cmp_deeply(\@shipments, [[ { ccmp('multifield_cud'),
     old => { id => $id_1, cdc_row_version => 4, foo => 6, bar => 4, enm => 1 },
     new => undef,
 }]], 'delete capture');
@@ -129,6 +129,66 @@ throws_ok {
     my $r_2 = $dbh2->multifield_cud->get($id_2);
     $r_2->set( foo => $r_2->foo+1 ) for 1 .. 257;
 } qr/cdc_row_version/;
+
+## Log record storage
+
+sub record_ok {
+    my ($table, $query, $data, $what) = @_;
+    my $rs = $dbh->$table->where(@$query);
+    local $Test::Builder::Level = $Test::Builder::Level + 1;
+
+    if ($data) {
+        is($rs->count, 1, "$what: exists uniquely");
+        my $r = $rs->next;
+
+        while (my ($k,$v) = splice @$data, 0, 2) {
+            if ($r) {
+                $v = 'NULL' unless defined $v;
+                is(defined($r->$k) ? $r->$k : 'NULL', $v, "$what: $k=$v");
+            } else {
+                fail("$what: $k");
+            }
+        }
+    } else {
+        is($rs->count, 1, "$what: should not exist");
+    }
+}
+
+lives_ok { $dbh->_session->record_change_data({ cset('good_c' ), new => { id => 5, foo => 'XYZ' }, user_id => 11, time => 12345 }) } 'record change record (c)';
+record_ok 'cdc_log_good_c', [ id => 5 ], [ foo => 'XYZ', cdc_start_user => 11, cdc_start_time => 12345 ], 'c/after insert/version 1';
+lives_ok { $dbh->_session->record_change_data({ cset('good_c' ), new => { id => 5, foo => 'XYZ' }, user_id => 11, time => 12345 }) } 'change recording is idempotent';
+record_ok 'cdc_log_good_c', [ id => 5 ], [ foo => 'XYZ', cdc_start_user => 11, cdc_start_time => 12345 ], 'c/after redundant insert/version 1';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cu'), new => { id => 6, foo => 'XYZ', cdc_row_version => 1 }, user_id => 11, time => 12345 }) } 'record change record (cu)';
+record_ok 'cdc_log_good_cu', [ id => 6, cdc_row_version => 1 ], [ foo => 'XYZ', cdc_start_user => 11, cdc_start_time => 12345 ], 'cu/after insert/v1';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cu'), old => { id => 7, foo => 'XYZ2', cdc_row_version => 1 }, new => { id => 7, foo => 'XYZ3', cdc_row_version => 2 }, user_id => 11, time => 12350 }) } 'record change record (cu, out of order update)';
+record_ok 'cdc_log_good_cu', [ id => 7, cdc_row_version => 1 ], [ foo => 'XYZ2', cdc_start_user => undef, cdc_start_time => 2**32-1, cdc_end_time => 12350 ], 'cu/OoO update 1/v1';
+record_ok 'cdc_log_good_cu', [ id => 7, cdc_row_version => 2 ], [ foo => 'XYZ3', cdc_start_user => 11, cdc_start_time => 12350, cdc_end_time => 2**32-1 ], 'cu/OoO update 1/v2';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cu'), new => { id => 7, foo => 'XYZ2', cdc_row_version => 1 }, user_id => 10, time => 12340 }) } 'record change record (cu, out of order insert)';
+record_ok 'cdc_log_good_cu', [ id => 7, cdc_row_version => 1 ], [ foo => 'XYZ2', cdc_start_user => 10, cdc_start_time => 12340, cdc_end_time => 12350 ], 'cu/OoO update 2/v1';
+record_ok 'cdc_log_good_cu', [ id => 7, cdc_row_version => 2 ], [ foo => 'XYZ3', cdc_start_user => 11, cdc_start_time => 12350, cdc_end_time => 2**32-1 ], 'cu/OoO update 2/v2';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cd'), new => { id => 8, foo => 'A5' }, user_id => 12, time => 12360 }) } 'record change record (cd, in order insert)';
+record_ok 'cdc_log_good_cd', [ id => 8 ], [ foo => 'A5', cdc_start_user => 12, cdc_start_time => 12360, cdc_end_time => 2**32-1, cdc_end_user => undef ], 'cd/insert/v1';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cd'), old => { id => 8, foo => 'A5' }, user_id => 13, time => 12370 }) } 'record change record (cd, in order delete)';
+record_ok 'cdc_log_good_cd', [ id => 8 ], [ foo => 'A5', cdc_start_user => 12, cdc_start_time => 12360, cdc_end_time => 12370, cdc_end_user => 13 ], 'cu/delete/v1';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cd'), old => { id => 9, foo => 'A6' }, user_id => 14, time => 12390 }) } 'record change record (cd, out of order delete)';
+record_ok 'cdc_log_good_cd', [ id => 9 ], [ foo => 'A6', cdc_start_user => undef, cdc_start_time => 2**32-1, cdc_end_time => 12390, cdc_end_user => 14 ], 'cd/OoO delete/v1';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cd'), new => { id => 9, foo => 'A6' }, user_id => 15, time => 12380 }) } 'record change record (cd, out of order insert)';
+record_ok 'cdc_log_good_cd', [ id => 9 ], [ foo => 'A6', cdc_start_user => 15, cdc_start_time => 12380, cdc_end_time => 12390, cdc_end_user => 14 ], 'cd/OoO insert/v1';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), new => { id => 10, foo => 'A7', cdc_row_version => 1 }, user_id => 16, time => 12390 }) } 'record change record (cud, in order insert)';
+record_ok 'cdc_log_good_cud', [ id => 10, cdc_row_version => 1 ], [ foo => 'A7', cdc_start_user => 16, cdc_start_time => 12390, cdc_end_time => 2**32-1, cdc_end_user => undef ], 'cud/insert/v1';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 10, foo => 'A7', cdc_row_version => 1 }, new => { id => 10, foo => 'A8', cdc_row_version => 2 }, user_id => 17, time => 12400 }) } 'record change record (cud, in order update)';
+record_ok 'cdc_log_good_cud', [ id => 10, cdc_row_version => 1 ], [ foo => 'A7', cdc_start_user => 16, cdc_start_time => 12390, cdc_end_time => 12400, cdc_end_user => 17 ], 'cud/update/v1';
+record_ok 'cdc_log_good_cud', [ id => 10, cdc_row_version => 2 ], [ foo => 'A8', cdc_start_user => 17, cdc_start_time => 12400, cdc_end_time => 2**32-1, cdc_end_user => undef ], 'cud/update/v2';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 10, foo => 'A8', cdc_row_version => 2 }, user_id => 18, time => 12410 }) } 'record change record (cud, in order delete)';
+record_ok 'cdc_log_good_cud', [ id => 10, cdc_row_version => 2 ], [ foo => 'A8', cdc_start_user => 17, cdc_start_time => 12400, cdc_end_time => 12410, cdc_end_user => 18 ], 'cud/delete/v2';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 11, foo => 'A9', cdc_row_version => 2 }, user_id => 21, time => 12440 }) } 'record change record (cud, out of order delete)';
+record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 2 ], [ foo => 'A9', cdc_start_user => undef, cdc_start_time => 2**32-1, cdc_end_time => 12440, cdc_end_user => 21 ], 'cud/OoO delete/v2';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 11, foo => 'A8', cdc_row_version => 1 }, new => { id => 11, foo => 'A9', cdc_row_version => 2 }, user_id => 20, time => 12430 }) } 'record change record (cud, out of order update)';
+record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 1 ], [ foo => 'A8', cdc_start_user => undef, cdc_start_time => 2**32-1, cdc_end_time => 12430, cdc_end_user => 20 ], 'cud/OoO update/v1';
+record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 2 ], [ foo => 'A9', cdc_start_user => 20, cdc_start_time => 12430, cdc_end_time => 12440, cdc_end_user => 21 ], 'cud/OoO update/v2';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), new => { id => 11, foo => 'A8', cdc_row_version => 1 }, user_id => 19, time => 12420 }) } 'record change record (cud, out of order insert)';
+record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 1 ], [ foo => 'A8', cdc_start_user => 19, cdc_start_time => 12420, cdc_end_time => 12430, cdc_end_user => 20 ], 'cud/OoO insert/v1';
+
 
 ## Integrity checking
 

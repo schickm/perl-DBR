@@ -452,7 +452,7 @@ sub _pk_where{
             my @and;
 
             foreach my $part (@$pk) {
-                my $cpart = $clones{ $pk->[0]->field_id };
+                my $cpart = $clones{ $part->field_id };
 
                 my $value = $cpart->makevalue( $rec->[ $part->index ] ) or return $self->_error('failed to create value object');
                 my $outfield = DBR::Query::Part::Compare->new( field => $cpart, value => $value ) or return $self->_error('failed to create compare object');

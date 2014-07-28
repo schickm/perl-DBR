@@ -327,4 +327,97 @@ sub schema{
       return $schema;
 }
 
+sub _record_change_data {
+    my ($self, @recs) = @_;
+
+    my (%tbls, $dbrh);
+    $dbrh = $self->connect;
+    $dbrh->begin;
+
+    for my $rec (@recs) {
+        my $tbl = $tbls{$rec->{table}} ||= $self->schema->get_table($rec->{table}) or croak("table missing: $rec->{table}");
+        my $cdc = $tbl->cdc_type;
+        $cdc->{logged} or croak("recording change data against non-logged $rec->{table}");
+
+        $self->_record_version( $tbl, $cdc, $rec->{old}, { cdc_end_time => $rec->{time}, $cdc->{delete_ok} ? (cdc_end_user => $rec->{user_id}) : () } ) if $rec->{old};
+        $self->_record_version( $tbl, $cdc, $rec->{new}, { cdc_start_time => $rec->{time}, cdc_start_user => $rec->{user_id} } ) if $rec->{new};
+    }
+
+    $dbrh->commit;
+}
+
+# a little unsure whether this could or should be rewritten to use L1/L2
+# functionality.  it does need to bypass translators and the log integrity
+# checks
+sub _record_version {
+    my ($self, $tbl, $cdc, $data, $edge) = @_;
+
+    my $log = $cdc->{log_table};
+    my $logf = $log->fields;
+
+    my $log = DBR::Config::Table->new(
+        session     => $self->{session},
+        table_id    => $cdc->{log_table}->{table_id},
+        instance_id => $self->guid,
+    ) or croak('failed to rebind table object');
+
+    my @gpk;
+    my @where;
+    my @set_if_not_exists;
+    my @set_always;
+    for my $f (@$logf) {
+        my $name = $f->name;
+        # end times default to the end of time for obvious reasons.  start
+        # times do so because this can only happen in out of order delivery
+        # cases; most likely the object has only existed for a very short time
+        # and so giving it an vacuous valid period is approximately correct
+        my $rval = exists($data->{$name}) ? $data->{$name} : exists($edge->{$name}) ? $edge->{$name} : ($name eq 'cdc_start_time' || $name eq 'cdc_end_time') ? 2**32-1 : undef;
+        my $valobj = DBR::Query::Part::Value->new( session => $self->{session}, field => $f, notrans => 1, value => $rval ) or croak('cannot create value object');
+        my $set = DBR::Query::Part::Set->new( $f, $valobj );
+
+        if ($f->is_pkey) {
+            push @where, DBR::Query::Part::Compare->new( field => $f, value => $valobj );
+        }
+
+        if (exists $edge->{$name}) {
+            push @set_always, $set;
+        } else {
+            push @set_if_not_exists, $set;
+        }
+    }
+
+    my $fetch = DBR::Query::Select->new(
+        session  => $self->{session},
+        instance => $self,
+        fields   => $log->primary_key,
+        tables   => $log,
+        where    => DBR::Query::Part::And->new(@where),
+        lock     => 1,
+    ) or croak('failed to create Query object');
+
+    my $sth = $fetch->run;
+    defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
+    my $rows = $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
+
+    if (@$rows) {
+        my $upd = DBR::Query::Update->new(
+            session  => $self->{session},
+            instance => $self,
+            tables   => $log,
+            where    => DBR::Query::Part::And->new(@where),
+            sets     => [ @set_always ],
+        );
+        $upd->run or croak('failed to execute update');
+    } else {
+        my $query = DBR::Query::Insert->new(
+            instance => $self,
+            session  => $self->{session},
+            sets     => [ @set_always, @set_if_not_exists ],
+            tables   => $log,
+        ) or confess 'failed to create query object';
+
+        $query->run or croak('failed to execute insert');
+    }
+}
+
 1;

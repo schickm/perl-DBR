@@ -45,7 +45,7 @@ sub new{
       if(ref($field) eq 'DBR::Config::Field'){ # No Anon
 
 	    my $trans = $field->translator;
-	    if($trans){
+	    if($trans && !$params{notrans}){
 
 		  my @translated;
 		  foreach (@$value){

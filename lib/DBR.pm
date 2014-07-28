@@ -82,6 +82,12 @@ sub import {
 	      $dbr->session;
 	};
         
+      *{"${callpack}::dbr_controller"} =
+	sub {
+	      shift if exists ($_[0]) && (blessed($_[0]) || $_[0]->isa( [caller]->[0] ));
+	      $dbr;
+	};
+        
 
 }
 sub new {

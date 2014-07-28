@@ -46,6 +46,24 @@ sub cdc_log_shipping_sub {
     return @_ > 1 ? ($_[0]{cdc_log_shipping_sub} = $_[1]) : ($_[0]{cdc_log_shipping_sub});
 }
 
+# change data recorder.  this isn't the right place but I'm not sure what is
+sub record_change_data {
+    my ($self, @logs) = @_;
+
+    my (%insts, %dedup);
+
+    for my $l (@logs) {
+        my $inst = $insts{$l->{ihandle}}{$l->{itag}} ||= DBR::Config::Instance->lookup( session => $self, handle => $l->{ihandle}, tag => $l->{itag} ) or croak('failed to lookup instance');
+        push @{$dedup{$inst} ||= [$inst]}, $l;
+    }
+
+    for my $lst (values %dedup) {
+        my $inst = shift @$lst;
+        $inst->_record_change_data(@$lst);
+    }
+}
+
+
 sub _sync_cdc { !$_[0]{cdc_log_shipping_sub} }
 
 sub timezone {
