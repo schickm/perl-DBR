@@ -110,7 +110,7 @@ sub _set{
     my $old;
     my $oldver;
     if ($cdc->{logged}) {
-        ($conn, $dbrh, $old, my $verfield) = $self->_lock_fetch_all($table, $outwhere);
+        ($conn, $dbrh, $old, my $verfield) = $self->_lock_fetch_all($table, $outwhere) or return '0E0';
         $oldver = $old->{cdc_row_version};
 
         if ($oldver) {
@@ -158,8 +158,8 @@ sub _lock_fetch_all {
     my ($self, $table, $outwhere) = @_;
 
     # create a new DBRH here to ensure proper transactional handling
-    my $conn = $table->instance->getconn or return $self->_error('failed to connect');
-    my $dbrh = $conn->dbh;
+    my $conn = $table->sql_instance->getconn or return $self->_error('failed to connect');
+    my $dbrh = $table->sql_instance->connect;
     $dbrh->begin;
 
     my %fields;
@@ -179,7 +179,7 @@ sub _lock_fetch_all {
     my $sth = $lfetch->run;
     defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
     my $rows = $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
-    @$rows == 1 or return 0; # reproduces non-logged behavior
+    @$rows == 1 or return (); # reproduces non-logged behavior
 
     my $old = {};
     for my $fn (keys %fields) {
@@ -205,7 +205,7 @@ sub delete{
     croak("this table is not logged for deletes") if $cdc->{logged} && !$cdc->{delete_ok};
     my ($conn,$dbrh,$old);
     if ($cdc->{logged}) {
-        ($conn, $dbrh, $old) = $self->_lock_fetch_all($table, $outwhere);
+        ($conn, $dbrh, $old) = $self->_lock_fetch_all($table, $outwhere) or return 1;
     }
 
        my $query = DBR::Query::Delete->new(
