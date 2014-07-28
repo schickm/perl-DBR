@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 164;
+use Test::More tests => 166;
 use Test::Exception;
 use Test::Deep;
 
@@ -189,6 +189,13 @@ record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 2 ], [ foo => 'A9',
 lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), new => { id => 11, foo => 'A8', cdc_row_version => 1 }, user_id => 19, time => 12420 }) } 'record change record (cud, out of order insert)';
 record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 1 ], [ foo => 'A8', cdc_start_user => 19, cdc_start_time => 12420, cdc_end_time => 12430, cdc_end_user => 20 ], 'cud/OoO insert/v1';
 
+$dbh->_session->cdc_log_shipping_sub(undef);
+
+$dbh->begin;
+my $id = $dbh->good_cd->insert( foo => 'B1' );
+is_deeply([$dbh->cdc_log_good_cd->where( id => $id )->dump('foo cdc_start_user')], [], 'sync modality, none before commit');
+$dbh->commit;
+is_deeply([$dbh->cdc_log_good_cd->where( id => $id )->dump('foo cdc_start_user')], [{ foo => 'B1', cdc_start_user => 42 }], 'sync modality, after commit');
 
 ## Integrity checking
 
