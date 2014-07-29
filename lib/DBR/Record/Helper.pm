@@ -108,6 +108,7 @@ sub _set{
       my ($outwhere,$table) = $self->_pk_where([$record],$table_id) or return $self->_error('failed to create where tree');
 
     my $cdc = $table->cdc_type;
+    croak('modification not permitted in time-query mode') if $self->{session}->query_time_mode;
     croak("modification of CDC logs not permitted") if $cdc->{is_log};
     croak("this table is not logged for updates") if $cdc->{logged} && !$cdc->{update_ok};
     my ($conn,$dbrh);
@@ -197,6 +198,7 @@ sub delete{
        my $self = shift;
        my $record = shift;
 
+    croak('modification not permitted in time-query mode') if $self->{session}->query_time_mode;
        return $self->_error('Cannot call delete on join record')
 	 if scalar(keys %{$self->{tablemap}}) > 1;
 

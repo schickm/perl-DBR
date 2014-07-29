@@ -120,6 +120,7 @@ sub new {
 	      session  => $params{session},
 	      table_id => $params{table_id},
               instance_id => $params{instance_id},
+              alias => $params{alias},
 	     };
 
   bless( $self, $package );

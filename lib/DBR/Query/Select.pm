@@ -60,9 +60,93 @@ sub can_be_subquery { scalar( @{ $_[0]->fields || [] } ) == 1 }; # Must have exa
 
 sub run {
       my $self = shift;
-      croak('joins must be run simulated in time-query mode') if @{$self->{tables}} > 1 && $self->{session}->query_time_mode;
+      croak('DBR::Query::Select::run is not usable in time query mode') if $self->{session}->query_time_mode;
       return $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
 }
+
+# use this if you will take either a sth or an arrayref
+sub _exec {
+    my $self = shift;
+
+    if ($self->{session}->query_time_mode) {
+        my @tbls = @{$self->{tables}};
+        croak('joins must be run simulated in time-query mode') if @tbls != 1;
+        my $cdc = $tbls[0]->cdc_type;
+        if (!$cdc->{logged}) {
+            # assume this table is permanently valid
+            return $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
+        }
+        # rebuild the statement to query the log table
+        my $newtable = DBR::Config::Table->new(
+            session     => $self->{session},
+            table_id    => $cdc->{log_table}->{table_id},
+            instance_id => $self->{instance}->guid,
+            alias       => $tbls[0]->alias,
+        ) or croak('failed to rebind table object');
+
+        my $newfields = [ @{ $self->{fields} } ];
+        my $last_real_idx = $self->{last_idx};
+        my %index;
+        my @pk_indices;
+        map { $index{$_->name} = $_->index } @$newfields;
+        for my $fd (@{$newtable->fields}) {
+            next unless $fd->name eq 'cdc_start_time' || $fd->name eq 'cdc_end_time' || $fd->is_pkey;
+            if (!defined($index{$fd->name})) {
+                my $ix = scalar @$newfields;
+                $fd->index($ix);
+                $index{$fd->name} = $ix;
+                push @$newfields, $fd;
+            }
+            if ($fd->name !~ /^cdc_/) { push @pk_indices, $index{$fd->name} }
+        }
+
+        # in addition to the obvious blehness of overriding tables and fields, this is additionally creating a somewhat invalid state by mixing base table fields with log table fields
+        my $sql = do {
+            local $self->{tables} = [$newtable];
+            local $self->{fields} = $newfields;
+            local $self->{offset};
+            local $self->{limit};
+            $self->sql;
+        };
+
+        my $sth = $self->instance->getconn->prepare( $sql ) || confess "Failed to prepare";
+        defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
+        my $rows = $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
+
+        # now filter out rows for the desired point in time, eliminating dups and preserving order
+        # why dups?  because of clock skew, the timestamps on a row can be non-monotonic.  which means some validity spans are empty while others overlap...
+        my $endix = $index{cdc_end_time};
+        my $startix = $index{cdc_start_time};
+        my $verix = $index{cdc_row_version};
+        my $focus = $self->{session}->query_selected_time; # notionally this is the middle of a second, all recorded stamps are beginnings of seconds
+        my %best;
+        for my $row (@$rows) {
+            if ($row->[$startix] > $focus) { @$row = (); next; }
+            if (defined($endix) && $row->[$endix] <= $focus) { @$row = (); next; }
+            if (defined $verix) {
+                my $bp = \$best{ join "\x{110000}", @$row[@pk_indices] };
+                if (!$$bp) {
+                    $$bp = $row;
+                } elsif ($$bp->[$verix] < $row->[$verix]) {
+                    @{$$bp} = ();
+                    $$bp = $row;
+                } else {
+                    @$row = ();
+                }
+            }
+        }
+
+        @$rows = grep { @$_ } @$rows;
+        map { splice(@$_, $last_real_idx+1) } @$rows;
+        splice(@$rows, 0, $self->{offset}) if $self->{offset};
+        splice(@$rows, $self->{limit}) if $self->{limit} && @$rows > $self->{limit};
+
+        return $rows;
+    } else {
+        return $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
+    }
+}
+
 sub reset {
       my $self = shift;
       return $self->{sth} && $self->{sth}->finish;
@@ -101,9 +185,14 @@ sub _do_split{
 sub fetch_all_records {
     my $self = shift;
 
-    my $sth = $self->run;
-    defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
-    my $rows = $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
+    my $rows = $self->_exec or croak 'failed to execute';
+
+    if (ref($rows) ne 'ARRAY') {
+        my $sth = $rows;
+        defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
+        $rows = $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
+    }
+
     my $recobj = $self->get_record_obj;
     my $class = $recobj->class;
 
@@ -120,7 +209,12 @@ sub fetch_all_records {
 
 sub fetch_column {
     my ($self) = @_;
-    my $sth = $self->run();
+    my $sth = $self->_exec or croak 'failed to execute';
+
+    if (ref($sth) eq 'ARRAY') {
+        return [ map($_->[0], @$sth) ];
+    }
+
     $sth->execute;
 
     my ($val,@list);
@@ -134,14 +228,18 @@ sub fetch_column {
 
 sub fetch_fieldmap {
     my ($self, $pk, $field) = @_;
-    my $sth = $self->run or return $self->_error('failed to execute');
+    my $sth = $self->_exec or return $self->_error('failed to execute');
+    my $getrow = 'shift(@$sth)';
 
-    $sth->execute() or return $self->_error('Failed to execute sth');
+    if (ref($sth) ne 'ARRAY') {
+        $getrow = '$sth->fetchrow_arrayref()';
+        $sth->execute() or return $self->_error('Failed to execute sth');
+    }
 
     my $lut = {};
 
     my $e = qq{
-        while (my \$row = \$sth->fetchrow_arrayref()) {
+        while (my \$row = $getrow) {
             \$lut->${\ join "", map("{\$row->[".$_->index."]}",@$pk) } = \$row->[${\$field->index}];
         }
     };

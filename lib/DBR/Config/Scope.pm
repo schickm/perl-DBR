@@ -91,6 +91,7 @@ sub _get_scope_id{
       # If the insert fails, that means someone else has won the race condition, try try again
       my $try;
       while(++$try < 3){
+            local $self->{session}->{query_time_mode} = 0; # need to disable these restrictions while hacking cache scopes, because they exist dun dun outside of time
 	    #Yeahhh... using the old way for now, Don't you like absurd recursion? perhaps change this?
 	    my $record = $dbrh->select(
 				       -table => 'cache_scopes',
@@ -136,6 +137,7 @@ sub fields{
 	    my $instance = $self->{instance};
 	    my $dbrh = $instance->connect or return $self->_error("Failed to connect to ${\$instance->name}");
 
+            local $self->{session}->{query_time_mode} = 0; # need to disable these restrictions while hacking cache scopes, because they exist dun dun outside of time
 	    my $fields = $dbrh->select(
 				       -table => 'cache_fielduse',
 				       -fields => 'field_id',
@@ -183,7 +185,9 @@ sub addfield{
       my $instance = $self->{instance};
       my $dbrh = $instance->connect or return $self->_error("Failed to connect to ${\$instance->name}");
 
+      local $self->{session}->{query_time_mode} = 0; # need to disable these restrictions while hacking cache scopes, because they exist dun dun outside of time
       # Don't check for failure, the unique index constraint will reject the insert in case of a race condition
+      # TODO: check for and catch failure, this is one of the last remaining places that making use_exceptions mandatory will break stuff
       my $row_id = $dbrh->insert(
 				 -table => 'cache_fielduse',
 				 -fields => {
