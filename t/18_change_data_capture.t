@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 207;
+use Test::More tests => 209;
 use Test::Exception;
 use Test::Deep;
 
@@ -280,6 +280,8 @@ $dbh->child->get($c4)->name('C4B');
 {
     local $sess->{query_time_mode} = 1;
     local $sess->{query_selected_time} = time() + 500;
+    local $sess->{query_start_time} = 0;
+    local $sess->{query_end_time} = 2**32-1;
 
     throws_ok { $dbh->multifield_cud->insert( foo => 13 ) } qr/modification/;
     throws_ok { $dbh->multifield_cud->get( $r12 )->set(foo => 14) } qr/modification/;
@@ -327,5 +329,14 @@ $dbh->child->get($c4)->name('C4B');
     is $dbh->parent->where( 'children.name' => 'C1A', name => 'P1B' )->count, 0, '"subquery" v2 1/4';
     is $dbh->parent->where( 'children.name' => 'C1B', name => 'P1A' )->count, 0, '"subquery" v2 1/4';
     is $dbh->parent->where( 'children.name' => 'C1B', name => 'P2B' )->count, 0, '"subquery" v2 1/4';
+
+    $sess->{query_start_time} = 21000;
+    $sess->{query_end_time} = 23000;
+    $sess->{query_selected_time} = 22000;
+    is $dbh->parent->where( name => 'P2B' )->count, 1, 'version visible despite spanning beginning';
+    $sess->{query_start_time} = 11000;
+    $sess->{query_end_time} = 13000;
+    $sess->{query_selected_time} = 12000;
+    is $dbh->parent->where( name => 'P2A' )->count, 1, 'version visible despite spanning end';
 }
 

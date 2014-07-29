@@ -88,6 +88,7 @@ sub _exec {
         my $last_real_idx = $self->{last_idx};
         my %index;
         my @pk_indices;
+        my @newcon;
         map { $index{$_->name} = $_->index } @$newfields;
         for my $fd (@{$newtable->fields}) {
             next unless $fd->name eq 'cdc_start_time' || $fd->name eq 'cdc_end_time' || $fd->is_pkey;
@@ -97,6 +98,12 @@ sub _exec {
                 $index{$fd->name} = $ix;
                 push @$newfields, $fd;
             }
+            if ($fd->name eq 'cdc_start_time') { # starts after end of range -> cannot be interested
+                push @newcon, DBR::Query::Part::Compare->new( field => $fd, operator => 'le', value => $fd->makevalue($self->{session}->query_end_time) );
+            }
+            if ($fd->name eq 'cdc_end_time') { # must end after the first second we care about
+                push @newcon, DBR::Query::Part::Compare->new( field => $fd, operator => 'gt', value => $fd->makevalue($self->{session}->query_start_time) );
+            }
             if ($fd->name !~ /^cdc_/) { push @pk_indices, $index{$fd->name} }
         }
 
@@ -104,6 +111,7 @@ sub _exec {
         my $sql = do {
             local $self->{tables} = [$newtable];
             local $self->{fields} = $newfields;
+            local $self->{where}  = DBR::Query::Part::And->new( grep { defined } $self->{where}, @newcon );
             local $self->{offset};
             local $self->{limit};
             $self->sql;
