@@ -39,6 +39,11 @@ sub new {
       return( $self );
 }
 
+# formatting these as verbs to minimize risk of colliding with table names, which ought to be nouns
+sub get_session { $_[0]{session} }
+sub get_schema { $_[0]{schema} }
+sub get_instance { $_[0]{instance} }
+
 sub select{ my $self = shift; return $self->{dbrv1}->select(@_) }
 sub insert{ my $self = shift; return $self->{dbrv1}->insert(@_) }
 sub update{ my $self = shift; return $self->{dbrv1}->update(@_) }

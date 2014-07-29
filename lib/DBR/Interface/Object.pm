@@ -38,6 +38,10 @@ sub new {
       return( $self );
 }
 
+sub session { $_[0]{session} }
+sub table { $_[0]{table} }
+sub instance { $_[0]{instance} }
+
 sub all{
       my $self = shift;
 

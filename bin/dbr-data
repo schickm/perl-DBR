@@ -1,0 +1,160 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use DBR;
+use DBR::Util::Logger;
+use DBR::Config::SpecLoader;
+use Getopt::Std;
+
+sub usage {
+    print STDERR "$_[0]\n" if @_;
+    print STDERR <<USAGE ;
+Usage:
+  dbr-data /path/to/DBR.conf -          [takes semicolon-separated lines]
+  dbr-data /path/to/DBR.conf select db.table {field=value}
+  dbr-data /path/to/DBR.conf insert db.table {field=value}
+  dbr-data /path/to/DBR.conf update db.table {where=value} -- {set=value} [will only update if exactly one match]
+  dbr-data /path/to/DBR.conf delete db.table {where=value} [will only delete if exactly one match]
+USAGE
+    exit 1;
+}
+
+my $conffile = shift(@ARGV) or usage('missing conf path');
+my $cmd = shift(@ARGV) or usage('missing command');
+my %dbh;
+
+my $logger = DBR::Util::Logger->new(-logpath => '/tmp/dbr_datatool.log', -logLevel => 'debug3') or die "Failed to create logger";
+my $dbr    = DBR->new( -logger => $logger, -conf => $conffile, -use_exceptions => 1 );
+
+my %commands = (
+    insert => \&cmd_insert,
+    update => \&cmd_update,
+    select => \&cmd_select,
+    delete => \&cmd_delete,
+);
+
+if ($cmd eq '-') {
+    @ARGV and usage('spurious arguments after -');
+
+    while (defined (my $line = <STDIN>)) {
+        $line =~ s/^\s+//; $line =~ s/\s+$//;
+        my @chunks = split /\s*;\s*/, $line;
+        my $cmd2 = shift(@chunks) or usage('empty line in input');
+        $commands{$cmd2} or usage('bad command in input');
+        $commands{$cmd2}(@chunks);
+    }
+}
+else {
+    $commands{$cmd} or usage('bad command');
+    $commands{$cmd}(@ARGV);
+}
+
+map { $_->commit } values %dbh;
+%dbh = ();
+
+sub common_parse {
+    my @args = @_;
+    my $tbl = shift(@args) or usage('missing table');
+    $tbl =~ /(.*)\.(.*)/ or usage('no . in table name');
+
+    my $db = $1;
+    my $tname = $2;
+
+    if (!$dbh{$db}) {
+        my $inst = DBR::Config::Instance->lookup( session => $dbr->session, database => $db );
+        $dbh{$db} = $inst->connect;
+        $dbh{$db}->begin;
+    }
+
+    $dbh{$db}->get_schema->has_table($tname) or usage("no such (known) table $tbl");
+    my $thandle = $dbh{$db}->$tname;
+
+    my @sets = ({});
+
+    for my $arg (@args) {
+        if ($arg eq '--') {
+            push @sets, {};
+        }
+        elsif ($arg =~ /\A([^=]+)=(.*)\z/s) {
+            usage("field $1 duplicated in set") if defined($sets[-1]{$1});
+            $sets[-1]{$1} = $2 eq 'NULL' ? undef : $2; # TODO: array syntax?  most useful for queries, which is not where this shines anyway
+        }
+        else {
+            usage("arg $arg not like -- or name=value");
+        }
+    }
+
+    return ($thandle, @sets);
+}
+
+sub printtable {
+    my @rows = @_;
+    my @colwid;
+
+    for my $r (@rows) {
+        for my $ci (0 .. $#$r) {
+            $colwid[$ci] ||= 0;
+            $colwid[$ci] = length($r->[$ci]) if length($r->[$ci]) > $colwid[$ci];
+        }
+    }
+
+    for my $r (@rows) {
+        my $line = '';
+        for my $ci (0 .. $#$r) {
+            $line .= $r->[$ci];
+            if ($ci != $#$r) {
+                $line .= '; ';
+                $line .= ' ' x ($colwid[$ci] - length($r->[$ci]));
+            }
+        }
+        print $line, "\n";
+    }
+}
+
+sub cmd_insert {
+    my ($thandle, @sets) = common_parse(@_);
+    @sets == 1 or usage('-- not allowed on insert');
+    $thandle->insert( %{$sets[0]} );
+}
+
+sub cmd_select {
+    my ($thandle, @sets) = common_parse(@_);
+    @sets == 1 or usage('-- not allowed on select');
+
+    my $rs = %{$sets[0]} ? $thandle->where( %{$sets[0]} ) : $thandle->all;
+    my @out;
+    my @fields = sort map { $_->name } @{ $thandle->table->fields };
+    while (my $r = $rs->next) {
+        my @row;
+        for my $f (@fields) {
+            my $v = $r->$f;
+            if (ref($v) eq 'DBR::_ENUM') {
+                $v = $v->handle || 'NULL';
+            }
+            elsif (!defined($v)) {
+                $v = 'NULL';
+            }
+
+            push @row, "$f=$v";
+        }
+        push @out, \@row;
+    }
+    printtable(@out);
+}
+
+sub cmd_update {
+    my ($thandle, @sets) = common_parse(@_);
+    @sets == 2 or usage('must have exactly two groups on update');
+    my $rs = $thandle->where( %{$sets[0]} );
+    $rs->count == 1 or usage('update does not match exactly one row');
+    $rs->next->set( %{$sets[1]} );
+}
+
+sub cmd_delete {
+    my ($thandle, @sets) = common_parse(@_);
+    @sets == 1 or usage('-- not allowed on delete');
+    my $rs = $thandle->where( %{$sets[0]} );
+    $rs->count == 1 or usage('delete does not match exactly one row');
+    $rs->next->delete;
+}

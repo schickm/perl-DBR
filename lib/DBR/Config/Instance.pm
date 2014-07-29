@@ -24,6 +24,7 @@ my %CONCACHE;
 my %INSTANCE_MAP;
 my %SCHEMA_MAP;
 my %INSTANCES_BY_GUID;
+my %INSTANCES_BY_DBNAME;
 
 
 sub flush_all_handles {
@@ -54,6 +55,8 @@ sub lookup{
 
       if( $params{guid} ){
 	    $self->{guid} = $params{guid};
+      } elsif ($params{database}) {
+          $self->{guid} = $INSTANCES_BY_DBNAME{$params{database}} or return $self->_error("no DB instance found for $params{database}");
       }else{
 	    my $handle = $params{handle} || return $self->_error('handle is required');
 	    my $class  = $params{class}  || 'master';
@@ -207,6 +210,7 @@ sub register { # basically the same as a new
       $INSTANCES_BY_GUID{ $guid } = $config;
       $self->{guid} = $config->{guid} = $guid;
       # Now we are cool to start calling accessors
+      $INSTANCES_BY_DBNAME{ $config->{database} } = $guid if $config->{database};
 
       if ($spec->{alias}) {
 	    $INSTANCE_MAP{ $spec->{alias} }{ $config->{tag} }{'*'} = $guid;
