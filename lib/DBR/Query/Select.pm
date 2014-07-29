@@ -135,7 +135,10 @@ sub _exec {
         my $verix = $index{cdc_row_version};
         my $focus = $self->{session}->query_selected_time; # notionally this is the middle of a second, all recorded stamps are beginnings of seconds
         my %best;
+        my $bp = $self->{session}->time_breakpoint_queue;
         for my $row (@$rows) {
+            $bp->{$row->[$startix]} = 1;
+            $bp->{$row->[$endix]} = 1 if defined($endix);
             if ($row->[$startix] > $focus) { $row = undef; next; }
             if (defined($endix) && $row->[$endix] <= $focus) { $row = undef; next; }
             if (defined $verix) {

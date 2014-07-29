@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 209;
+use Test::More tests => 210;
 use Test::Exception;
 use Test::Deep;
 
@@ -282,6 +282,7 @@ $dbh->child->get($c4)->name('C4B');
     local $sess->{query_selected_time} = time() + 500;
     local $sess->{query_start_time} = 0;
     local $sess->{query_end_time} = 2**32-1;
+    local $sess->{time_breakpoint_queue} = {};
     #local $sess->{query_cache} = {};
 
     throws_ok { $dbh->multifield_cud->insert( foo => 13 ) } qr/modification/;
@@ -320,6 +321,7 @@ $dbh->child->get($c4)->name('C4B');
     is $dbh->parent->where( 'children.name' => 'C1A', name => 'P2A' )->count, 0, '"subquery" v1 1/4';
 
     $sess->{query_selected_time} = 21000;
+    $sess->{time_breakpoint_queue} = {};
     is $via_child->(), 'P1B/C1B P1B/C2B P2B/C3B P2B/C4B', 'many-to-1 fetches v2 ok';
     is $via_parent->(), 'P1B/C1B P1B/C2B P2B/C3B P2B/C4B', '1-to-many fetches v2 ok';
     is $dbh->child->where( name => 'C1B', 'parent.name' => 'P1B' )->count, 1, '"join" v2 1/4';
@@ -330,6 +332,7 @@ $dbh->child->get($c4)->name('C4B');
     is $dbh->parent->where( 'children.name' => 'C1A', name => 'P1B' )->count, 0, '"subquery" v2 1/4';
     is $dbh->parent->where( 'children.name' => 'C1B', name => 'P1A' )->count, 0, '"subquery" v2 1/4';
     is $dbh->parent->where( 'children.name' => 'C1B', name => 'P2B' )->count, 0, '"subquery" v2 1/4';
+    is join(' ',sort keys %{$sess->{time_breakpoint_queue}}), join(' ',10000,20000,2**32-1), 'time breakpoint extraction';
 
     $sess->{query_start_time} = 21000;
     $sess->{query_end_time} = 23000;
