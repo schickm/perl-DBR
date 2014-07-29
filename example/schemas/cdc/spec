@@ -3,3 +3,4 @@ table=cdc.multifield_cud; field=enm; cmd=ENUMOPT; name=aaa; handle=aaa; override
 table=cdc.multifield_cud; field=enm; cmd=ENUMOPT; name=bbb; handle=bbb; override_id=2
 table=cdc.multifield_cud; field=enm; cmd=ENUMOPT; name=ccc; handle=ccc; override_id=3
 table=cdc.multifield_cud; field=enm; cmd=DEFAULT; value=bbb
+table=cdc.child; field=parent_id; cmd=RELATION; type=CHILDOF; relfield=id; reltable=cdc.parent; relname=parent; reverse_name=children

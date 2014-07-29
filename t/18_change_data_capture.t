@@ -8,21 +8,22 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 187;
+use Test::More tests => 207;
 use Test::Exception;
 use Test::Deep;
 
 # As always, it's important that the sample database is not tampered with, otherwise our tests will fail
 my $dbr = setup_schema_ok('cdc');
-$dbr->{session}->{use_exceptions} = 1;
+my $sess = $dbr->_session;
+$sess->{use_exceptions} = 1;
 
 my $dbh = $dbr->connect('cdc');
 ok($dbh, 'dbr connect');
 
 ## UID storage
 
-$dbh->_session->user_id(42);
-is($dbh->_session->user_id, 42, 'DBR session can store user IDs');
+$sess->user_id(42);
+is($sess->user_id, 42, 'DBR session can store user IDs');
 
 ## Table identification (user code is not supposed to touch this)
 
@@ -53,7 +54,7 @@ lives_and { cmp_deeply($dbh->good_cud->{table}->cdc_type, {logged => 1, log_tabl
 ## Log record capture
 
 my @shipments;
-$dbh->_session->cdc_log_shipping_sub( sub { push @shipments, [@_] } );
+$sess->cdc_log_shipping_sub( sub { push @shipments, [@_] } );
 
 sub ccmp { return ( user_id => 42, itag => '', ihandle => 'cdc', table => shift(), time => ignore(), old => undef, new => undef ) }
 sub cset { return ( user_id => 42, itag => '', ihandle => 'cdc', table => shift(), time => time(), old => undef, new => undef ) }
@@ -195,47 +196,47 @@ sub record_ok {
     }
 }
 
-lives_ok { $dbh->_session->record_change_data({ cset('good_c' ), new => { id => 5, foo => 'XYZ' }, user_id => 11, time => 12345 }) } 'record change record (c)';
+lives_ok { $sess->record_change_data({ cset('good_c' ), new => { id => 5, foo => 'XYZ' }, user_id => 11, time => 12345 }) } 'record change record (c)';
 record_ok 'cdc_log_good_c', [ id => 5 ], [ foo => 'XYZ', cdc_start_user => 11, cdc_start_time => 12345 ], 'c/after insert/version 1';
-lives_ok { $dbh->_session->record_change_data({ cset('good_c' ), new => { id => 5, foo => 'XYZ' }, user_id => 11, time => 12345 }) } 'change recording is idempotent';
+lives_ok { $sess->record_change_data({ cset('good_c' ), new => { id => 5, foo => 'XYZ' }, user_id => 11, time => 12345 }) } 'change recording is idempotent';
 record_ok 'cdc_log_good_c', [ id => 5 ], [ foo => 'XYZ', cdc_start_user => 11, cdc_start_time => 12345 ], 'c/after redundant insert/version 1';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cu'), new => { id => 6, foo => 'XYZ', cdc_row_version => 1 }, user_id => 11, time => 12345 }) } 'record change record (cu)';
+lives_ok { $sess->record_change_data({ cset('good_cu'), new => { id => 6, foo => 'XYZ', cdc_row_version => 1 }, user_id => 11, time => 12345 }) } 'record change record (cu)';
 record_ok 'cdc_log_good_cu', [ id => 6, cdc_row_version => 1 ], [ foo => 'XYZ', cdc_start_user => 11, cdc_start_time => 12345 ], 'cu/after insert/v1';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cu'), old => { id => 7, foo => 'XYZ2', cdc_row_version => 1 }, new => { id => 7, foo => 'XYZ3', cdc_row_version => 2 }, user_id => 11, time => 12350 }) } 'record change record (cu, out of order update)';
+lives_ok { $sess->record_change_data({ cset('good_cu'), old => { id => 7, foo => 'XYZ2', cdc_row_version => 1 }, new => { id => 7, foo => 'XYZ3', cdc_row_version => 2 }, user_id => 11, time => 12350 }) } 'record change record (cu, out of order update)';
 record_ok 'cdc_log_good_cu', [ id => 7, cdc_row_version => 1 ], [ foo => 'XYZ2', cdc_start_user => undef, cdc_start_time => 2**32-1, cdc_end_time => 12350 ], 'cu/OoO update 1/v1';
 record_ok 'cdc_log_good_cu', [ id => 7, cdc_row_version => 2 ], [ foo => 'XYZ3', cdc_start_user => 11, cdc_start_time => 12350, cdc_end_time => 2**32-1 ], 'cu/OoO update 1/v2';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cu'), new => { id => 7, foo => 'XYZ2', cdc_row_version => 1 }, user_id => 10, time => 12340 }) } 'record change record (cu, out of order insert)';
+lives_ok { $sess->record_change_data({ cset('good_cu'), new => { id => 7, foo => 'XYZ2', cdc_row_version => 1 }, user_id => 10, time => 12340 }) } 'record change record (cu, out of order insert)';
 record_ok 'cdc_log_good_cu', [ id => 7, cdc_row_version => 1 ], [ foo => 'XYZ2', cdc_start_user => 10, cdc_start_time => 12340, cdc_end_time => 12350 ], 'cu/OoO update 2/v1';
 record_ok 'cdc_log_good_cu', [ id => 7, cdc_row_version => 2 ], [ foo => 'XYZ3', cdc_start_user => 11, cdc_start_time => 12350, cdc_end_time => 2**32-1 ], 'cu/OoO update 2/v2';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cd'), new => { id => 8, foo => 'A5' }, user_id => 12, time => 12360 }) } 'record change record (cd, in order insert)';
+lives_ok { $sess->record_change_data({ cset('good_cd'), new => { id => 8, foo => 'A5' }, user_id => 12, time => 12360 }) } 'record change record (cd, in order insert)';
 record_ok 'cdc_log_good_cd', [ id => 8 ], [ foo => 'A5', cdc_start_user => 12, cdc_start_time => 12360, cdc_end_time => 2**32-1, cdc_end_user => undef ], 'cd/insert/v1';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cd'), old => { id => 8, foo => 'A5' }, user_id => 13, time => 12370 }) } 'record change record (cd, in order delete)';
+lives_ok { $sess->record_change_data({ cset('good_cd'), old => { id => 8, foo => 'A5' }, user_id => 13, time => 12370 }) } 'record change record (cd, in order delete)';
 record_ok 'cdc_log_good_cd', [ id => 8 ], [ foo => 'A5', cdc_start_user => 12, cdc_start_time => 12360, cdc_end_time => 12370, cdc_end_user => 13 ], 'cu/delete/v1';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cd'), old => { id => 9, foo => 'A6' }, user_id => 14, time => 12390 }) } 'record change record (cd, out of order delete)';
+lives_ok { $sess->record_change_data({ cset('good_cd'), old => { id => 9, foo => 'A6' }, user_id => 14, time => 12390 }) } 'record change record (cd, out of order delete)';
 record_ok 'cdc_log_good_cd', [ id => 9 ], [ foo => 'A6', cdc_start_user => undef, cdc_start_time => 2**32-1, cdc_end_time => 12390, cdc_end_user => 14 ], 'cd/OoO delete/v1';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cd'), new => { id => 9, foo => 'A6' }, user_id => 15, time => 12380 }) } 'record change record (cd, out of order insert)';
+lives_ok { $sess->record_change_data({ cset('good_cd'), new => { id => 9, foo => 'A6' }, user_id => 15, time => 12380 }) } 'record change record (cd, out of order insert)';
 record_ok 'cdc_log_good_cd', [ id => 9 ], [ foo => 'A6', cdc_start_user => 15, cdc_start_time => 12380, cdc_end_time => 12390, cdc_end_user => 14 ], 'cd/OoO insert/v1';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), new => { id => 10, foo => 'A7', cdc_row_version => 1 }, user_id => 16, time => 12390 }) } 'record change record (cud, in order insert)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), new => { id => 10, foo => 'A7', cdc_row_version => 1 }, user_id => 16, time => 12390 }) } 'record change record (cud, in order insert)';
 record_ok 'cdc_log_good_cud', [ id => 10, cdc_row_version => 1 ], [ foo => 'A7', cdc_start_user => 16, cdc_start_time => 12390, cdc_end_time => 2**32-1, cdc_end_user => undef ], 'cud/insert/v1';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 10, foo => 'A7', cdc_row_version => 1 }, new => { id => 10, foo => 'A8', cdc_row_version => 2 }, user_id => 17, time => 12400 }) } 'record change record (cud, in order update)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), old => { id => 10, foo => 'A7', cdc_row_version => 1 }, new => { id => 10, foo => 'A8', cdc_row_version => 2 }, user_id => 17, time => 12400 }) } 'record change record (cud, in order update)';
 record_ok 'cdc_log_good_cud', [ id => 10, cdc_row_version => 1 ], [ foo => 'A7', cdc_start_user => 16, cdc_start_time => 12390, cdc_end_time => 12400, cdc_end_user => 17 ], 'cud/update/v1';
 record_ok 'cdc_log_good_cud', [ id => 10, cdc_row_version => 2 ], [ foo => 'A8', cdc_start_user => 17, cdc_start_time => 12400, cdc_end_time => 2**32-1, cdc_end_user => undef ], 'cud/update/v2';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 10, foo => 'A8', cdc_row_version => 2 }, user_id => 18, time => 12410 }) } 'record change record (cud, in order delete)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), old => { id => 10, foo => 'A8', cdc_row_version => 2 }, user_id => 18, time => 12410 }) } 'record change record (cud, in order delete)';
 record_ok 'cdc_log_good_cud', [ id => 10, cdc_row_version => 2 ], [ foo => 'A8', cdc_start_user => 17, cdc_start_time => 12400, cdc_end_time => 12410, cdc_end_user => 18 ], 'cud/delete/v2';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 11, foo => 'A9', cdc_row_version => 2 }, user_id => 21, time => 12440 }) } 'record change record (cud, out of order delete)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), old => { id => 11, foo => 'A9', cdc_row_version => 2 }, user_id => 21, time => 12440 }) } 'record change record (cud, out of order delete)';
 record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 2 ], [ foo => 'A9', cdc_start_user => undef, cdc_start_time => 2**32-1, cdc_end_time => 12440, cdc_end_user => 21 ], 'cud/OoO delete/v2';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 11, foo => 'A8', cdc_row_version => 1 }, new => { id => 11, foo => 'A9', cdc_row_version => 2 }, user_id => 20, time => 12430 }) } 'record change record (cud, out of order update)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), old => { id => 11, foo => 'A8', cdc_row_version => 1 }, new => { id => 11, foo => 'A9', cdc_row_version => 2 }, user_id => 20, time => 12430 }) } 'record change record (cud, out of order update)';
 record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 1 ], [ foo => 'A8', cdc_start_user => undef, cdc_start_time => 2**32-1, cdc_end_time => 12430, cdc_end_user => 20 ], 'cud/OoO update/v1';
 record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 2 ], [ foo => 'A9', cdc_start_user => 20, cdc_start_time => 12430, cdc_end_time => 12440, cdc_end_user => 21 ], 'cud/OoO update/v2';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), new => { id => 11, foo => 'A8', cdc_row_version => 1 }, user_id => 19, time => 12420 }) } 'record change record (cud, out of order insert)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), new => { id => 11, foo => 'A8', cdc_row_version => 1 }, user_id => 19, time => 12420 }) } 'record change record (cud, out of order insert)';
 record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 1 ], [ foo => 'A8', cdc_start_user => 19, cdc_start_time => 12420, cdc_end_time => 12430, cdc_end_user => 20 ], 'cud/OoO insert/v1';
 
 # version 2 has a reversed time interval. we will use this later
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), new => { id => 12, foo => 'A9', cdc_row_version => 1 }, user_id => 16, time => 12390 }) } 'record change record (cud, clock skew 1)';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 12, foo => 'A9', cdc_row_version => 1 }, new => { id => 12, foo => 'A10', cdc_row_version => 2 }, user_id => 17, time => 12410 }) } 'record change record (cud, clock skew 2)';
-lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 12, foo => 'A10', cdc_row_version => 2 }, new => { id => 12, foo => 'A11', cdc_row_version => 3 }, user_id => 18, time => 12400 }) } 'record change record (cud, clock skew 3)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), new => { id => 12, foo => 'A9', cdc_row_version => 1 }, user_id => 16, time => 12390 }) } 'record change record (cud, clock skew 1)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), old => { id => 12, foo => 'A9', cdc_row_version => 1 }, new => { id => 12, foo => 'A10', cdc_row_version => 2 }, user_id => 17, time => 12410 }) } 'record change record (cud, clock skew 2)';
+lives_ok { $sess->record_change_data({ cset('good_cud'), old => { id => 12, foo => 'A10', cdc_row_version => 2 }, new => { id => 12, foo => 'A11', cdc_row_version => 3 }, user_id => 18, time => 12400 }) } 'record change record (cud, clock skew 3)';
 
-$dbh->_session->cdc_log_shipping_sub(undef);
+$sess->cdc_log_shipping_sub(undef);
 
 $dbh->begin;
 my $id = $dbh->good_cd->insert( foo => 'B1' );
@@ -258,30 +259,73 @@ throws_ok { $dbh->cdc_log_good_cd->get(9)->cdc_start_time( 19 ) } qr/readonly/;
 ## Query mode
 
 my $r12 = $dbh->multifield_cud->insert( foo => 12 );
+
+$sess->cdc_mock_time(10000);
+my $p1 = $dbh->parent->insert(name => 'P1A');
+my $p2 = $dbh->parent->insert(name => 'P2A');
+my $c1 = $dbh->child->insert(name => 'C1A', parent_id => $p1);
+my $c2 = $dbh->child->insert(name => 'C2A', parent_id => $p1);
+my $c3 = $dbh->child->insert(name => 'C3A', parent_id => $p2);
+my $c4 = $dbh->child->insert(name => 'C4A', parent_id => $p2);
+
+$sess->cdc_mock_time(20000);
+$dbh->parent->get($p1)->name('P1B');
+$dbh->parent->get($p2)->name('P2B');
+$dbh->child->get($c1)->name('C1B');
+$dbh->child->get($c2)->name('C2B');
+$dbh->child->get($c3)->name('C3B');
+$dbh->child->get($c4)->name('C4B');
+
+
 {
-    local $dbh->_session->{query_time_mode} = 1;
-    local $dbh->_session->{query_selected_time} = time() + 500;
+    local $sess->{query_time_mode} = 1;
+    local $sess->{query_selected_time} = time() + 500;
 
     throws_ok { $dbh->multifield_cud->insert( foo => 13 ) } qr/modification/;
     throws_ok { $dbh->multifield_cud->get( $r12 )->set(foo => 14) } qr/modification/;
     throws_ok { $dbh->multifield_cud->get( $r12 )->delete } qr/modification/;
 
-    $dbh->_session->{query_selected_time} = 12344;
+    $sess->{query_selected_time} = 12344;
     record_ok 'good_c', [ id => 5 ], undef, 'c: record does not exist before create';
-    $dbh->_session->{query_selected_time} = 12345;
+    $sess->{query_selected_time} = 12345;
     record_ok 'good_c', [ id => 5 ], [ foo => 'XYZ' ], 'c: record exists after create';
-    $dbh->_session->{query_selected_time} = 2**30;
+    $sess->{query_selected_time} = 2**30;
     record_ok 'good_c', [ id => 5 ], [ foo => 'XYZ' ], 'c: record exists in far future';
-    $dbh->_session->{query_selected_time} = 12359;
+    $sess->{query_selected_time} = 12359;
     record_ok 'good_cd', [ id => 8 ], undef, 'cd: no record before create';
-    $dbh->_session->{query_selected_time} = 12360;
+    $sess->{query_selected_time} = 12360;
     record_ok 'good_cd', [ id => 8 ], [ foo => 'A5' ], 'cd: record after create';
-    $dbh->_session->{query_selected_time} = 12369;
+    $sess->{query_selected_time} = 12369;
     record_ok 'good_cd', [ id => 8 ], [ foo => 'A5' ], 'cd: record before delete';
-    $dbh->_session->{query_selected_time} = 12370;
+    $sess->{query_selected_time} = 12370;
     record_ok 'good_cd', [ id => 8 ], undef, 'cd: no record after delete';
-    $dbh->_session->{query_selected_time} = 12405;
+    $sess->{query_selected_time} = 12405;
     record_ok 'good_cud', [ id => 12 ], [ foo => 'A11' ], 'cud: clock skew does not create dup results';
 
+    my $via_child = sub { my @r; $dbh->child->all->each(sub { push @r, $_[0]->parent->name.'/'.$_[0]->name }); join " ", sort @r };
+    my $via_parent = sub { my @r; $dbh->parent->all->each(sub { my $p = shift; $p->children->each(sub { push @r, $p->name.'/'.$_[0]->name }); }); join " ", sort @r };
+    $sess->{query_selected_time} = 11000;
+    is $via_child->(), 'P1A/C1A P1A/C2A P2A/C3A P2A/C4A', 'many-to-1 fetches v1 ok';
+    is $via_parent->(), 'P1A/C1A P1A/C2A P2A/C3A P2A/C4A', '1-to-many fetches v1 ok';
+    is $dbh->child->where( name => 'C1A', 'parent.name' => 'P1A' )->count, 1, '"join" v1 1/4';
+    is $dbh->child->where( name => 'C1B', 'parent.name' => 'P1A' )->count, 0, '"join" v1 1/4';
+    is $dbh->child->where( name => 'C1A', 'parent.name' => 'P1B' )->count, 0, '"join" v1 1/4';
+    is $dbh->child->where( name => 'C1A', 'parent.name' => 'P2A' )->count, 0, '"join" v1 1/4';
+    is $dbh->parent->where( 'children.name' => 'C1A', name => 'P1A' )->count, 1, '"subquery" v1 1/4';
+    is $dbh->parent->where( 'children.name' => 'C1B', name => 'P1A' )->count, 0, '"subquery" v1 1/4';
+    is $dbh->parent->where( 'children.name' => 'C1A', name => 'P1B' )->count, 0, '"subquery" v1 1/4';
+    is $dbh->parent->where( 'children.name' => 'C1A', name => 'P2A' )->count, 0, '"subquery" v1 1/4';
+
+    $sess->{query_selected_time} = 21000;
+    is $via_child->(), 'P1B/C1B P1B/C2B P2B/C3B P2B/C4B', 'many-to-1 fetches v2 ok';
+    is $via_parent->(), 'P1B/C1B P1B/C2B P2B/C3B P2B/C4B', '1-to-many fetches v2 ok';
+    is $dbh->child->where( name => 'C1B', 'parent.name' => 'P1B' )->count, 1, '"join" v2 1/4';
+    is $dbh->child->where( name => 'C1A', 'parent.name' => 'P1B' )->count, 0, '"join" v2 1/4';
+    is $dbh->child->where( name => 'C1B', 'parent.name' => 'P1A' )->count, 0, '"join" v2 1/4';
+    is $dbh->child->where( name => 'C1B', 'parent.name' => 'P2B' )->count, 0, '"join" v2 1/4';
+    is $dbh->parent->where( 'children.name' => 'C1B', name => 'P1B' )->count, 1, '"subquery" v2 1/4';
+    is $dbh->parent->where( 'children.name' => 'C1A', name => 'P1B' )->count, 0, '"subquery" v2 1/4';
+    is $dbh->parent->where( 'children.name' => 'C1B', name => 'P1A' )->count, 0, '"subquery" v2 1/4';
+    is $dbh->parent->where( 'children.name' => 'C1B', name => 'P2B' )->count, 0, '"subquery" v2 1/4';
 }
 

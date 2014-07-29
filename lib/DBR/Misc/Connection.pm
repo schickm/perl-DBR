@@ -179,7 +179,7 @@ sub __cdc_ship {
     my $handler = $logs[0]->{HANDLER};
     my $session = $logs[0]->{SESSION};
 
-    my $txtime = time;
+    my $txtime = $session->cdc_mock_time || time;
     for my $l (@logs) {
         delete $l->{HANDLER};
         delete $l->{SESSION};

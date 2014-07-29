@@ -51,6 +51,7 @@ sub query_start_time { @_ > 1 ? ($_[0]{query_start_time} = $_[1]) : ($_[0]{query
 sub query_end_time { @_ > 1 ? ($_[0]{query_end_time} = $_[1]) : ($_[0]{query_end_time}) }
 sub query_selected_time { @_ > 1 ? ($_[0]{query_selected_time} = $_[1]) : ($_[0]{query_selected_time}) }
 sub query_cache { @_ > 1 ? ($_[0]{query_cache} = $_[1]) : ($_[0]{query_cache}) }
+sub cdc_mock_time { @_ > 1 ? ($_[0]{cdc_mock_time} = $_[1]) : ($_[0]{cdc_mock_time}) }
 sub time_breakpoint_queue { @_ > 1 ? ($_[0]{time_breakpoint_queue} = $_[1]) : ($_[0]{time_breakpoint_queue}) }
 
 # change data recorder.  this isn't the right place but I'm not sure what is
