@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 171;
+use Test::More tests => 187;
 use Test::Exception;
 use Test::Deep;
 
@@ -191,7 +191,7 @@ sub record_ok {
             }
         }
     } else {
-        is($rs->count, 1, "$what: should not exist");
+        is($rs->count, 0, "$what: should not exist");
     }
 }
 
@@ -230,6 +230,11 @@ record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 2 ], [ foo => 'A9',
 lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), new => { id => 11, foo => 'A8', cdc_row_version => 1 }, user_id => 19, time => 12420 }) } 'record change record (cud, out of order insert)';
 record_ok 'cdc_log_good_cud', [ id => 11, cdc_row_version => 1 ], [ foo => 'A8', cdc_start_user => 19, cdc_start_time => 12420, cdc_end_time => 12430, cdc_end_user => 20 ], 'cud/OoO insert/v1';
 
+# version 2 has a reversed time interval. we will use this later
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), new => { id => 12, foo => 'A9', cdc_row_version => 1 }, user_id => 16, time => 12390 }) } 'record change record (cud, clock skew 1)';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 12, foo => 'A9', cdc_row_version => 1 }, new => { id => 12, foo => 'A10', cdc_row_version => 2 }, user_id => 17, time => 12410 }) } 'record change record (cud, clock skew 2)';
+lives_ok { $dbh->_session->record_change_data({ cset('good_cud'), old => { id => 12, foo => 'A10', cdc_row_version => 2 }, new => { id => 12, foo => 'A11', cdc_row_version => 3 }, user_id => 18, time => 12400 }) } 'record change record (cud, clock skew 3)';
+
 $dbh->_session->cdc_log_shipping_sub(undef);
 
 $dbh->begin;
@@ -260,5 +265,23 @@ my $r12 = $dbh->multifield_cud->insert( foo => 12 );
     throws_ok { $dbh->multifield_cud->insert( foo => 13 ) } qr/modification/;
     throws_ok { $dbh->multifield_cud->get( $r12 )->set(foo => 14) } qr/modification/;
     throws_ok { $dbh->multifield_cud->get( $r12 )->delete } qr/modification/;
+
+    $dbh->_session->{query_selected_time} = 12344;
+    record_ok 'good_c', [ id => 5 ], undef, 'c: record does not exist before create';
+    $dbh->_session->{query_selected_time} = 12345;
+    record_ok 'good_c', [ id => 5 ], [ foo => 'XYZ' ], 'c: record exists after create';
+    $dbh->_session->{query_selected_time} = 2**30;
+    record_ok 'good_c', [ id => 5 ], [ foo => 'XYZ' ], 'c: record exists in far future';
+    $dbh->_session->{query_selected_time} = 12359;
+    record_ok 'good_cd', [ id => 8 ], undef, 'cd: no record before create';
+    $dbh->_session->{query_selected_time} = 12360;
+    record_ok 'good_cd', [ id => 8 ], [ foo => 'A5' ], 'cd: record after create';
+    $dbh->_session->{query_selected_time} = 12369;
+    record_ok 'good_cd', [ id => 8 ], [ foo => 'A5' ], 'cd: record before delete';
+    $dbh->_session->{query_selected_time} = 12370;
+    record_ok 'good_cd', [ id => 8 ], undef, 'cd: no record after delete';
+    $dbh->_session->{query_selected_time} = 12405;
+    record_ok 'good_cud', [ id => 12 ], [ foo => 'A11' ], 'cud: clock skew does not create dup results';
+
 }
 
