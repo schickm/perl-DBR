@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 210;
+use Test::More tests => 212;
 use Test::Exception;
 use Test::Deep;
 
@@ -276,6 +276,8 @@ $dbh->child->get($c2)->name('C2B');
 $dbh->child->get($c3)->name('C3B');
 $dbh->child->get($c4)->name('C4B');
 
+my $via_child = sub { my @r; $dbh->child->all->each(sub { push @r, $_[0]->parent->name.'/'.$_[0]->name }); join " ", sort @r };
+my $via_parent = sub { my @r; $dbh->parent->all->each(sub { my $p = shift; $p->children->each(sub { push @r, $p->name.'/'.$_[0]->name }); }); join " ", sort @r };
 
 {
     local $sess->{query_time_mode} = 1;
@@ -306,8 +308,6 @@ $dbh->child->get($c4)->name('C4B');
     $sess->{query_selected_time} = 12405;
     record_ok 'good_cud', [ id => 12 ], [ foo => 'A11' ], 'cud: clock skew does not create dup results';
 
-    my $via_child = sub { my @r; $dbh->child->all->each(sub { push @r, $_[0]->parent->name.'/'.$_[0]->name }); join " ", sort @r };
-    my $via_parent = sub { my @r; $dbh->parent->all->each(sub { my $p = shift; $p->children->each(sub { push @r, $p->name.'/'.$_[0]->name }); }); join " ", sort @r };
     $sess->{query_selected_time} = 11000;
     is $via_child->(), 'P1A/C1A P1A/C2A P2A/C3A P2A/C4A', 'many-to-1 fetches v1 ok';
     is $via_parent->(), 'P1A/C1A P1A/C2A P2A/C3A P2A/C4A', '1-to-many fetches v1 ok';
@@ -344,3 +344,12 @@ $dbh->child->get($c4)->name('C4B');
     is $dbh->parent->where( name => 'P2A' )->count, 1, 'version visible despite spanning end';
 }
 
+lives_and {
+    $sess->query_point_in_time( 11000, sub {
+        is $dbh->child->where( name => 'C1A', 'parent.name' => 'P1A' )->count, 1;
+    } );
+} 'point in time query';
+
+is_deeply [$sess->query_history( 5000 => 25000, $via_child )],
+    [ { start => 5000, end => 10000, value => '' }, { start => 10000, end => 20000, value => 'P1A/C1A P1A/C2A P2A/C3A P2A/C4A' }, { start => 20000, end => 25000, value => 'P1B/C1B P1B/C2B P2B/C3B P2B/C4B' } ],
+    'history of complex query 1';

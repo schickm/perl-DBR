@@ -54,6 +54,81 @@ sub query_cache { @_ > 1 ? ($_[0]{query_cache} = $_[1]) : ($_[0]{query_cache}) }
 sub cdc_mock_time { @_ > 1 ? ($_[0]{cdc_mock_time} = $_[1]) : ($_[0]{cdc_mock_time}) }
 sub time_breakpoint_queue { @_ > 1 ? ($_[0]{time_breakpoint_queue} = $_[1]) : ($_[0]{time_breakpoint_queue}) }
 
+# just a conservative little thing to avoid blatant duplication in the output of query_history without causing too many errors
+sub __deepeq {
+    my ($x,$y) = @_;
+    return 1 if !defined($x) && !defined($y);
+    return 0 if !defined($x) || !defined($y);
+    return 0 if ref($x) ne ref($y);
+    return ($x eq $y) if !ref($x);
+    return 1 if Scalar::Util::refaddr($x) == Scalar::Util::refaddr($y);
+    if (ref($x) eq 'ARRAY') {
+        return 0 if @$x != @$y;
+        for (0 .. $#$x) {
+            __deepeq($x->[$_],$y->[$_]) or return 0;
+        }
+        return 1;
+    }
+    if (ref($x) eq 'HASH') {
+        return 0 if keys(%$x) != keys(%$y);
+        for (keys %$x) {
+            exists($y->{$_}) or return 0;
+            __deepeq($x->{$_},$y->{$_}) or return 0;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+sub query_point_in_time {
+    my ($self, $time, $fn) = @_;
+
+    $time = int $time;
+    local($self->{query_time_mode}) = 1;
+    local($self->{query_start_time}) = local($self->{query_end_time}) = local($self->{query_selected_time}) = $time;
+    local($self->{time_breakpoint_queue}) = {};
+
+    return $fn->();
+}
+
+sub query_history {
+    my ($self, $from, $to_ex, $fn) = @_;
+
+    $from = int($from);
+    $to_ex = int($to_ex);
+
+    local($self->{query_time_mode}) = 1;
+    local($self->{query_start_time}) = $from;
+    local($self->{query_end_time}) = $to_ex - 1;
+    local($self->{time_breakpoint_queue}) = { $to_ex > $from ? ($from => 1) : () };
+    local($self->{query_cache}) = {};
+
+    my %datapoints;
+
+    while (1) {
+        my @test = grep { $_ >= $from && $_ < $to_ex && !exists($datapoints{$_}) } keys %{$self->{time_breakpoint_queue}};
+        %{$self->{time_breakpoint_queue}} = ();
+
+        last unless @test;
+
+        for my $t (@test) {
+            local $self->{query_selected_time} = $t;
+            $datapoints{$t} = $fn->();
+        }
+    }
+
+    my @out;
+    for my $time (sort { $a <=> $b } keys %datapoints) {
+        if (!@out || !__deepeq($datapoints{$time}, $out[-1]{value})) {
+            $out[-1]{end} = $time if @out;
+            push @out, { start => $time, value => $datapoints{$time} };
+        }
+    }
+    $out[-1]{end} = $to_ex;
+
+    return wantarray ? @out : \@out;
+}
+
 # change data recorder.  this isn't the right place but I'm not sure what is
 sub record_change_data {
     my ($self, @logs) = @_;
