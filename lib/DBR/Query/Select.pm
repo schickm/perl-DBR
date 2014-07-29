@@ -117,9 +117,16 @@ sub _exec {
             $self->sql;
         };
 
-        my $sth = $self->instance->getconn->prepare( $sql ) || confess "Failed to prepare";
-        defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
-        my $rows = $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
+        # multi-point time queries will make a looot of redundant fetches
+        # may make sense to drag this cache to a higher level, so that e.g. record-makers can be reused as well
+        my $qc = $self->{session}->query_cache;
+        my $rowsp = $qc ? \$qc->{ $self->instance->getconn }->{ $sql } : \do { my $x };
+        my $rows = $$rowsp ||= do {
+            my $sth = $self->instance->getconn->prepare( $sql ) || confess "Failed to prepare";
+            defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
+            $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
+        };
+        $rows = [@$rows];
 
         # now filter out rows for the desired point in time, eliminating dups and preserving order
         # why dups?  because of clock skew, the timestamps on a row can be non-monotonic.  which means some validity spans are empty while others overlap...
@@ -129,23 +136,23 @@ sub _exec {
         my $focus = $self->{session}->query_selected_time; # notionally this is the middle of a second, all recorded stamps are beginnings of seconds
         my %best;
         for my $row (@$rows) {
-            if ($row->[$startix] > $focus) { @$row = (); next; }
-            if (defined($endix) && $row->[$endix] <= $focus) { @$row = (); next; }
+            if ($row->[$startix] > $focus) { $row = undef; next; }
+            if (defined($endix) && $row->[$endix] <= $focus) { $row = undef; next; }
             if (defined $verix) {
                 my $bp = \$best{ join "\x{110000}", @$row[@pk_indices] };
                 if (!$$bp) {
-                    $$bp = $row;
-                } elsif ($$bp->[$verix] < $row->[$verix]) {
-                    @{$$bp} = ();
-                    $$bp = $row;
+                    $$bp = \$row;
+                } elsif ($$$bp->[$verix] < $row->[$verix]) {
+                    $$$bp = undef;
+                    $$bp = \$row;
                 } else {
-                    @$row = ();
+                    $row = undef;
                 }
             }
         }
 
-        @$rows = grep { @$_ } @$rows;
-        map { splice(@$_, $last_real_idx+1) } @$rows;
+        @$rows = grep { $_ } @$rows;
+        map { $_ = [@$_[0 .. $last_real_idx]] } @$rows;
         splice(@$rows, 0, $self->{offset}) if $self->{offset};
         splice(@$rows, $self->{limit}) if $self->{limit} && @$rows > $self->{limit};
 

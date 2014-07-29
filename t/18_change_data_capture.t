@@ -282,6 +282,7 @@ $dbh->child->get($c4)->name('C4B');
     local $sess->{query_selected_time} = time() + 500;
     local $sess->{query_start_time} = 0;
     local $sess->{query_end_time} = 2**32-1;
+    #local $sess->{query_cache} = {};
 
     throws_ok { $dbh->multifield_cud->insert( foo => 13 ) } qr/modification/;
     throws_ok { $dbh->multifield_cud->get( $r12 )->set(foo => 14) } qr/modification/;
