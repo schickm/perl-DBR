@@ -130,6 +130,7 @@ sub load{
 					       ) or die('failed to register field');
 
             $field->[C_is_system] = $field->[C_is_readonly] = 1 if $tbl->{name} =~ /^cdc_/ || $field->[C_name] =~ /^cdc_/;
+            $field->[C_trans_id] = 3 if $field->[C_name] =~ /^cdc_.*_time/; # UNIXTIME
 
 	    if ( $datatype_lookup{ $field->[C_data_type] }->{handle} eq 'datetime' ){ 
 			$field->[C_trans_id] ||= 5; #DateTime hack

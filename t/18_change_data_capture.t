@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 212;
+use Test::More tests => 215;
 use Test::Exception;
 use Test::Deep;
 
@@ -185,8 +185,11 @@ sub record_ok {
 
         while (my ($k,$v) = splice @$data, 0, 2) {
             if ($r) {
+                my $c = $r->$k;
+                $c = $c->unixtime if ref($c) eq 'DBR::_UXTIME';
+                $c = 'NULL' unless defined $c;
                 $v = 'NULL' unless defined $v;
-                is(defined($r->$k) ? $r->$k : 'NULL', $v, "$what: $k=$v");
+                is($c, $v, "$what: $k=$v");
             } else {
                 fail("$what: $k");
             }
@@ -288,7 +291,7 @@ my $via_parent = sub { my @r; $dbh->parent->all->each(sub { my $p = shift; $p->c
     #local $sess->{query_cache} = {};
 
     throws_ok { $dbh->multifield_cud->insert( foo => 13 ) } qr/modification/;
-    throws_ok { $dbh->multifield_cud->get( $r12 )->set(foo => 14) } qr/modification/;
+    throws_ok { $dbh->multifield_cud->get( $r12 )->set(foo => 14) } qr/readonly/;
     throws_ok { $dbh->multifield_cud->get( $r12 )->delete } qr/modification/;
 
     $sess->{query_selected_time} = 12344;
@@ -353,3 +356,11 @@ lives_and {
 is_deeply [$sess->query_history( 5000 => 25000, $via_child )],
     [ { start => 5000, end => 10000, value => '' }, { start => 10000, end => 20000, value => 'P1A/C1A P1A/C2A P2A/C3A P2A/C4A' }, { start => 20000, end => 25000, value => 'P1B/C1B P1B/C2B P2B/C3B P2B/C4B' } ],
     'history of complex query 1';
+
+$sess->query_point_in_time( 11000, sub {
+    my $rec = $dbh->child->where( name => 'C1A', 'parent.name' => 'P1A' )->next;
+    is $rec->cdc_start_time->unixtime, 10000, 'history row: cdc_start_time';
+    is $rec->cdc_end_time->unixtime, 20000, 'history row: cdc_end_time';
+    is $rec->cdc_start_user, 42, 'history row: cdc_start_user';
+} );
+

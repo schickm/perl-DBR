@@ -74,95 +74,128 @@ sub _exec {
         my $cdc = $tbls[0]->cdc_type;
         if (!$cdc->{logged}) {
             # assume this table is permanently valid
-            return $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
-        }
-        # rebuild the statement to query the log table
-        my $newtable = DBR::Config::Table->new(
-            session     => $self->{session},
-            table_id    => $cdc->{log_table}->{table_id},
-            instance_id => $self->{instance}->guid,
-            alias       => $tbls[0]->alias,
-        ) or croak('failed to rebind table object');
-
-        my $newfields = [ @{ $self->{fields} } ];
-        my $last_real_idx = $self->{last_idx};
-        my %index;
-        my @pk_indices;
-        my @newcon;
-        map { $index{$_->name} = $_->index } @$newfields;
-        for my $fd (@{$newtable->fields}) {
-            next unless $fd->name eq 'cdc_start_time' || $fd->name eq 'cdc_end_time' || $fd->is_pkey;
-            if (!defined($index{$fd->name})) {
-                my $ix = scalar @$newfields;
-                $fd->index($ix);
-                $index{$fd->name} = $ix;
-                push @$newfields, $fd;
-            }
-            if ($fd->name eq 'cdc_start_time') { # starts after end of range -> cannot be interested
-                push @newcon, DBR::Query::Part::Compare->new( field => $fd, operator => 'le', value => $fd->makevalue($self->{session}->query_end_time) );
-            }
-            if ($fd->name eq 'cdc_end_time') { # must end after the first second we care about
-                push @newcon, DBR::Query::Part::Compare->new( field => $fd, operator => 'gt', value => $fd->makevalue($self->{session}->query_start_time) );
-            }
-            if ($fd->name !~ /^cdc_/) { push @pk_indices, $index{$fd->name} }
+            my $sth = $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
+            return ($self, $sth, undef);
         }
 
-        # in addition to the obvious blehness of overriding tables and fields, this is additionally creating a somewhat invalid state by mixing base table fields with log table fields
-        my $sql = do {
-            local $self->{tables} = [$newtable];
-            local $self->{fields} = $newfields;
-            local $self->{where}  = DBR::Query::Part::And->new( grep { defined } $self->{where}, @newcon );
-            local $self->{offset};
-            local $self->{limit};
-            $self->sql;
-        };
+        my $pretender = $self->_create_pretender_query($tbls[0]);
 
-        # multi-point time queries will make a looot of redundant fetches
-        # may make sense to drag this cache to a higher level, so that e.g. record-makers can be reused as well
-        my $qc = $self->{session}->query_cache;
-        my $rowsp = $qc ? \$qc->{ $self->instance->getconn }->{ $sql } : \do { my $x };
-        my $rows = $$rowsp ||= do {
-            my $sth = $self->instance->getconn->prepare( $sql ) || confess "Failed to prepare";
-            defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
-            $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
-        };
-        $rows = [@$rows];
-
-        # now filter out rows for the desired point in time, eliminating dups and preserving order
-        # why dups?  because of clock skew, the timestamps on a row can be non-monotonic.  which means some validity spans are empty while others overlap...
-        my $endix = $index{cdc_end_time};
-        my $startix = $index{cdc_start_time};
-        my $verix = $index{cdc_row_version};
-        my $focus = $self->{session}->query_selected_time; # notionally this is the middle of a second, all recorded stamps are beginnings of seconds
-        my %best;
-        my $bp = $self->{session}->time_breakpoint_queue;
-        for my $row (@$rows) {
-            $bp->{$row->[$startix]} = 1;
-            $bp->{$row->[$endix]} = 1 if defined($endix);
-            if ($row->[$startix] > $focus) { $row = undef; next; }
-            if (defined($endix) && $row->[$endix] <= $focus) { $row = undef; next; }
-            if (defined $verix) {
-                my $bp = \$best{ join "\x{110000}", @$row[@pk_indices] };
-                if (!$$bp) {
-                    $$bp = \$row;
-                } elsif ($$$bp->[$verix] < $row->[$verix]) {
-                    $$$bp = undef;
-                    $$bp = \$row;
-                } else {
-                    $row = undef;
-                }
-            }
-        }
-
-        @$rows = grep { $_ } @$rows;
-        map { $_ = [@$_[0 .. $last_real_idx]] } @$rows;
-        splice(@$rows, 0, $self->{offset}) if $self->{offset};
-        splice(@$rows, $self->{limit}) if $self->{limit} && @$rows > $self->{limit};
-
-        return $rows;
+        return ($pretender, undef, $pretender->_historical_fetch($self));
     } else {
-        return $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
+        my $sth = $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
+        return ($self, $sth, undef);
     }
+}
+
+sub _create_pretender_query {
+    my ($self) = @_;
+
+    # rebuild the statement to query the log table
+    my $newtable = $self->{tables}->[0]->cdc_type->{log_table}->clone( alias => $self->{tables}->[0]->alias, instance_id => $self->{instance}->guid )
+        or croak('failed to rebind table object');
+
+    # we're going to be consistently including log fields in the field array.
+    # what we're not consistent about is that orderby and where are still referencing non-log fields, and DBR::Record::Maker uses the log field names when code expects non-log field names
+    # both of these depend on the common naming, beyond the fact of the common naming being used for matching
+
+    my %include;
+    map { $include{$_->name} = $_ } @{ $self->{fields} };
+
+    my %index;
+    my @pk_indices;
+    my @newcon = $self->{where} || ();
+    my $newfields = [];
+
+    for my $fd (@{$newtable->fields}) {
+        my $name = $fd->name;
+        if ($name eq 'cdc_start_time' || $name eq 'cdc_end_time' || $name eq 'cdc_row_version' || $include{$name}) {
+            push @$newfields, $fd;
+        }
+        if ($name eq 'cdc_start_time') { # starts after end of range -> cannot be interested
+            push @newcon, DBR::Query::Part::Compare->new( field => $fd, operator => 'le', value => $fd->makevalue($self->{session}->query_end_time) );
+        }
+        if ($name eq 'cdc_end_time') { # must end after the first second we care about
+            push @newcon, DBR::Query::Part::Compare->new( field => $fd, operator => 'gt', value => $fd->makevalue($self->{session}->query_start_time) );
+        }
+    }
+
+    my $new = DBR::Query::Select->new(
+        tables     => [$newtable],
+        fields     => $newfields,
+        where      => @newcon ? DBR::Query::Part::And->new( @newcon ) : undef,
+        orderby    => $self->orderby,
+        instance   => $self->{instance},
+        session    => $self->{session},
+        splitfield => $self->{splitfield},
+        scope      => $self->{scope},
+        # elide limit, offset
+    );
+
+    # ensure that indexes are accurate on the fields we're not actually using - needed by _do_split and fetch_fieldmap
+    # deliberately overwriting index which was set when $self was created
+    map { $include{$_->name}->_force_index($_->index) if $include{$_->name} } @{$new->fields};
+    return $new;
+}
+
+
+# when doing a historical function calculation query we try to keep down
+# queries by pulling all data for the active range once and then post-filtering
+# it. now filter out rows for the desired point in time, eliminating dups and
+# preserving order. why dups?  because of clock skew, the timestamps on a row
+# can be non-monotonic.  which means some validity spans are empty while others
+# overlap...
+sub _historical_fetch {
+    my ($self, $orig) = @_;
+
+    my $sess = $self->{session};
+    my $qc = $sess->query_cache;
+    my $focus = $sess->query_selected_time; # notionally this is the middle of a second, all recorded stamps are beginnings of seconds
+    my $bp = $sess->time_breakpoint_queue;
+
+    # multi-point time queries will make a looot of redundant fetches
+    # may make sense to drag this cache to a higher level, so that e.g. record-makers can be reused as well
+    my $sql = $self->sql;
+    my $rowsp = $qc ? \$qc->{ $self->instance->getconn }->{ $sql } : \do { my $x };
+    my $rows = $$rowsp ||= do {
+        my $sth = $self->instance->getconn->prepare( $sql ) || confess "Failed to prepare";
+        defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
+        $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
+    };
+
+    # now filter, being careful not to damage the original $rows
+    $rows = [@$rows];
+
+    my ($endix,$startix,$verix,@pk_indices);
+    for my $f (@{ $self->{fields} }) {
+        $endix = $f->index if $f->name eq 'cdc_end_time';
+        $startix = $f->index if $f->name eq 'cdc_start_time';
+        $verix = $f->index if $f->name eq 'cdc_row_version';
+        push @pk_indices, $f->index if $f->is_pkey && $f->name ne 'cdc_row_version';
+    }
+    my %best;
+    for my $row (@$rows) {
+        $bp->{$row->[$startix]} = 1;
+        $bp->{$row->[$endix]} = 1 if defined($endix);
+        if ($row->[$startix] > $focus) { $row = undef; next; }
+        if (defined($endix) && $row->[$endix] <= $focus) { $row = undef; next; }
+        if (defined $verix) {
+            my $bp = \$best{ join "\x{110000}", @$row[@pk_indices] };
+            if (!$$bp) {
+                $$bp = \$row;
+            } elsif ($$$bp->[$verix] < $row->[$verix]) {
+                $$$bp = undef;
+                $$bp = \$row;
+            } else {
+                $row = undef;
+            }
+        }
+    }
+
+    @$rows = grep { $_ } @$rows;
+    splice(@$rows, 0, $orig->{offset}) if $orig->{offset};
+    splice(@$rows, $orig->{limit}) if $orig->{limit} && @$rows > $orig->{limit};
+
+    return $rows;
 }
 
 sub reset {
@@ -187,13 +220,14 @@ sub fetch_segment{
 sub _do_split{
       my $self = shift;
 
+    my ($rows, $newquery) = $self->fetch_all_records;
       # Should have a splitfield if we're getting here. Don't check for it. speeed.
       defined( my $idx = $self->{splitfield}->index ) or croak 'field object must provide an index';
 
       my %groupby;
 
       # this was an eval, but there is scant to be gained replacing pp_padsv with pp_const
-      for my $rec ($self->fetch_all_records) {
+      for my $rec (@$rows) {
           push @{$groupby{ $rec->[0][$idx] }}, $rec;
       }
 
@@ -203,15 +237,14 @@ sub _do_split{
 sub fetch_all_records {
     my $self = shift;
 
-    my $rows = $self->_exec or croak 'failed to execute';
+    my ($newquery, $sth, $rows) = $self->_exec;
 
-    if (ref($rows) ne 'ARRAY') {
-        my $sth = $rows;
+    if (!$rows) {
         defined( $sth->execute ) or croak 'failed to execute statement (' . $sth->errstr. ')';
         $rows = $sth->fetchall_arrayref or croak 'failed to execute statement (' . $sth->errstr . ')';
     }
 
-    my $recobj = $self->get_record_obj;
+    my $recobj = $newquery->get_record_obj;
     my $class = $recobj->class;
 
     my @out;
@@ -222,15 +255,16 @@ sub fetch_all_records {
         map { weaken $_ } @$chunk;
     }
 
-    return wantarray ? @out : \@out;
+    return wantarray ? (\@out, $newquery) : \@out;
 }
 
 sub fetch_column {
     my ($self) = @_;
-    my $sth = $self->_exec or croak 'failed to execute';
+    my ($newquery, $sth, $rows) = $self->_exec;
 
-    if (ref($sth) eq 'ARRAY') {
-        return [ map($_->[0], @$sth) ];
+    if ($rows) {
+        my $ix = $self->fields->[0]->index;
+        return [ map($_->[$ix], @$rows) ];
     }
 
     $sth->execute;
@@ -246,10 +280,10 @@ sub fetch_column {
 
 sub fetch_fieldmap {
     my ($self, $pk, $field) = @_;
-    my $sth = $self->_exec or return $self->_error('failed to execute');
-    my $getrow = 'shift(@$sth)';
+    my ($newquery, $sth, $rows) = $self->_exec;
+    my $getrow = 'shift(@$rows)';
 
-    if (ref($sth) ne 'ARRAY') {
+    if ($sth) {
         $getrow = '$sth->fetchrow_arrayref()';
         $sth->execute() or return $self->_error('Failed to execute sth');
     }

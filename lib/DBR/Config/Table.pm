@@ -141,8 +141,8 @@ sub clone{
       return bless({
                   session   => $self->{session},
                   table_id  => $self->{table_id},
-                  instance_id => $self->{instance_id},
-                  $params{with_alias} ? ( alias => $self->{alias} ) : (),
+                  instance_id => defined($params{instance_id}) ? $params{instance_id} : $self->{instance_id},
+                  $params{alias} ? ( alias => $params{alias} ) : $params{with_alias} ? ( alias => $self->{alias} ) : (),
             },
            ref($self)
       );
@@ -238,10 +238,15 @@ sub cdc_type  { $TABLES_BY_ID{ $_[0]->{table_id} }->{cdc_type} ||= $_[0]->_cdc_t
 sub __describe { join(':', $_[0]->typename, $_[0]->is_pkey ? 'pk' : (), $_[0]->is_signed ? () : 'un', $_[0]->is_nullable || $_[0]->is_pkey ? () : 'nn') }
 sub _cdc_type {
     my $self = shift;
+    # TODO: There is potential for significant savings with create-only tables by merging the main table with the log table.
 
     my $rec = $TABLES_BY_ID{ $self->{table_id} };
-    if ($rec->{name} =~ /^cdc_log_/) {
-        return { is_log => 1 };
+    my $schema = $self->schema;
+    if ($rec->{name} =~ /^cdc_log_(.*)/) {
+        my $basename = $1;
+        my $base = $schema && $schema->has_table($basename) && $schema->get_table($basename);
+        $base || croak("log table $rec->{name} seems to be missing base $basename");
+        return { is_log => 1, base_table => $base };
     }
     if ($rec->{name} =~ /^cdc_/) {
         croak("table $rec->{name} is an unrecognized CDC table");
@@ -249,7 +254,6 @@ sub _cdc_type {
 
     my $fields = $self->fields;
     my @cdc_fields = grep { $_->name =~ /^cdc_/ } @$fields;
-    my $schema = $self->schema;
     my $log = $schema && $schema->has_table("cdc_log_$rec->{name}") && $schema->get_table("cdc_log_$rec->{name}");
 
     if (!$log) {

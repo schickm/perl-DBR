@@ -24,6 +24,7 @@ sub new {
 		  instance => $params{instance},
 		  tablemap => $params{tablemap},
 		  flookup  => $params{flookup},
+		  ffake    => $params{ffake},
 		  pkmap    => $params{pkmap},
 		  scope    => $params{scope},
 		  lastidx  => $params{lastidx},
@@ -52,6 +53,7 @@ sub set{
       $self->{instance}->is_readonly && return $self->_error("Instance is readonly");
       foreach my $fieldname (keys %params){
 	    my $field = $self->{flookup}->{$fieldname} or return $self->_error("$fieldname is not a valid field");
+            $field = $self->{ffake}{$field->field_id} || $field;
 	    $field->is_readonly && return $self->_error("Field $fieldname is readonly");
 
 	    my $setvalue = $field->makevalue($params{$fieldname}) or return $self->_error('failed to create setvalue object');

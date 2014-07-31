@@ -53,10 +53,12 @@ sub _prep{
 
 	    $orig_table{$table_id} = $field->table;
       }
+      @fields = grep { !$_->field_id } @fields; # only fields explicitly authorized below may be included
 
       my %tablemap;
       my %pkmap;
       my %flookup;
+      my %ffake;
       my @allrelations;
       my @tablenames;
       foreach my $orig_table (values %orig_table){
@@ -64,6 +66,16 @@ sub _prep{
 	    my $table = $orig_table->clone or return $self->_error('Failed to create table object');
 
 	    my $allfields = $table->fields or return $self->_error('failed to retrieve fields for table');
+
+            my $cdc_base = $orig_table->cdc_type->{base_table};
+            # if cdc_base exists, use its fields and relations instead of those in the log table
+            # but set $ffake so that data will actually come from the log record
+            my %remap;
+            if ($cdc_base) {
+                for my $basef (@{ $cdc_base->fields }) {
+                    $remap{$basef->name} = $basef;
+                }
+            }
 
 	    my @pk;
 	    #We need to check to make sure that all PK fields are included in the query results.
@@ -84,19 +96,21 @@ sub _prep{
 			}
 
 			push @pk, $field->clone( with_index => 1 ); # Make a clean copy of the field object in case this one has an alias
-		  }else{
-			if(!$field){
-			      push @fields, $checkfield; #not in the resultset, but we should still know about it
-			      $self->{fieldmap}->{ $checkfield->field_id } = $checkfield;
-			}
 		  }
 		  $field ||= $checkfield;
+                  my $mapf = $remap{ $field->name };
+                  if ($mapf) {
+                      $ffake{ $mapf->field_id } = $field;
+                      $field = $mapf;
+                  }
+                  push @fields, $field;
+                  $self->{fieldmap}->{ $field->field_id } ||= $field;
 	    }
 
 	    $tablemap{$table_id} = $table;
 	    $pkmap{$table_id}    = \@pk;
 
-	    my $relations = $table->relations or return $self->_error('failed to retrieve relations for table');
+	    my $relations = ($cdc_base || $table)->relations or return $self->_error('failed to retrieve relations for table');
 	    push @allrelations, @$relations;
 	    push @tablenames, $table->name;
       }
@@ -111,6 +125,7 @@ sub _prep{
 					    tablemap => \%tablemap,
 					    pkmap    => \%pkmap,
 					    flookup  => \%flookup,
+                                            ffake    => \%ffake,
 					    scope    => $scope,
 					    lastidx  => $query->lastidx,
 					   ) or return $self->_error('Failed to create Helper object');
@@ -125,6 +140,7 @@ sub _prep{
 				mode  => $mymode,
 				field => $work_clone,
 				helper => $helper,
+                                backing => \%ffake,
 			       ) or return $self->_error('Failed to create accessor');
       }
       
@@ -132,6 +148,7 @@ sub _prep{
 	    $self->_mk_relation(
 				relation => $relation,
 				helper   => $helper,
+                                backing  => \%ffake,
 			       ) or return $self->_error('Failed to create relation');
       }
 
@@ -198,8 +215,9 @@ sub _mk_accessor{
       $code = "sub {$code}";
 
       $self->_logDebug3("$method = $code");
+      my $backf = $params{backing}{$field->field_id} || $field;
 
-      my $subref = _eval_accessor($helper,$field,$trans,$code) or $self->_error('Failed to eval accessor ' . $@);
+      my $subref = _eval_accessor($helper,$backf,$trans,$code) or $self->_error('Failed to eval accessor ' . $@);
 
       my $symbol = qualify_to_ref( $self->{recordclass} . '::' . $method );
       *$symbol = $subref;
@@ -242,7 +260,8 @@ sub _mk_relation{
       $code = "sub {$code}";
       $self->_logDebug3("$method = $code");
 
-      my $subref = _eval_relation($helper,$relation,$field,$code) or $self->_error('Failed to eval relation' . $@);
+      my $backf = $params{backing}{$field->field_id} || $field;
+      my $subref = _eval_relation($helper,$relation,$backf,$code) or $self->_error('Failed to eval relation' . $@);
 
       {
         no warnings 'redefine';

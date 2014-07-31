@@ -54,6 +54,14 @@ sub index{
       return $self->[O_index];
 }
 
+# turns out there's exactly one place where we need to repurpose fields that already have a (wrong) index on them
+sub _force_index {
+    my $self = shift;
+    my $set = shift;
+
+    $self->[O_index] = $set;
+}
+
 sub validate { 1 }
 
 sub sql  {
