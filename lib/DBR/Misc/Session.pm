@@ -53,6 +53,9 @@ sub query_selected_time { @_ > 1 ? ($_[0]{query_selected_time} = $_[1]) : ($_[0]
 sub query_cache { @_ > 1 ? ($_[0]{query_cache} = $_[1]) : ($_[0]{query_cache}) }
 sub cdc_mock_time { @_ > 1 ? ($_[0]{cdc_mock_time} = $_[1]) : ($_[0]{cdc_mock_time}) }
 sub time_breakpoint_queue { @_ > 1 ? ($_[0]{time_breakpoint_queue} = $_[1]) : ($_[0]{time_breakpoint_queue}) }
+# feel free to use time_breakpoint_queue directly when speed is needed
+# remember that this must have infimum semantics, the first second of a new regime, not the last second of a preceding one
+sub add_time_breakpoint { $_[0]{time_breakpoint_queue}{$_[1]} = 1 }
 
 # just a conservative little thing to avoid blatant duplication in the output of query_history without causing too many errors
 sub __deepeq {

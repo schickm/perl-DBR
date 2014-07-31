@@ -8,7 +8,7 @@ $| = 1;
 
 use lib './lib';
 use t::lib::Test;
-use Test::More tests => 215;
+use Test::More tests => 218;
 use Test::Exception;
 use Test::Deep;
 
@@ -336,6 +336,8 @@ my $via_parent = sub { my @r; $dbh->parent->all->each(sub { my $p = shift; $p->c
     is $dbh->parent->where( 'children.name' => 'C1B', name => 'P1A' )->count, 0, '"subquery" v2 1/4';
     is $dbh->parent->where( 'children.name' => 'C1B', name => 'P2B' )->count, 0, '"subquery" v2 1/4';
     is join(' ',sort keys %{$sess->{time_breakpoint_queue}}), join(' ',10000,20000,2**32-1), 'time breakpoint extraction';
+    $sess->add_time_breakpoint(42);
+    is join(' ',sort {$a<=>$b} keys %{$sess->{time_breakpoint_queue}}), join(' ',42,10000,20000,2**32-1), 'time breakpoint manual injection';
 
     $sess->{query_start_time} = 21000;
     $sess->{query_end_time} = 23000;
@@ -364,3 +366,8 @@ $sess->query_point_in_time( 11000, sub {
     is $rec->cdc_start_user, 42, 'history row: cdc_start_user';
 } );
 
+{
+    my $r = $dbh->parent->versions->where( name => 'P1A' )->next;
+    ok $r, '->versions query functions';
+    is $r->cdc_end_time->unixtime, 20000, 'can access cdc_end_time on ->versions query';
+}

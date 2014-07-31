@@ -42,6 +42,15 @@ sub session { $_[0]{session} }
 sub table { $_[0]{table} }
 sub instance { $_[0]{instance} }
 
+sub versions {
+    my ($self) = @_;
+
+    my $log = $self->{table}->cdc_type->{log_table};
+    croak("table ".$self->{table}->name." does not have logged history") unless $log;
+
+    return DBR::Interface::Object->new( session => $self->{session}, instance => $self->{instance}, table => $log->clone( instance_id => $self->{instance}->guid ) );
+}
+
 sub all{
       my $self = shift;
 
