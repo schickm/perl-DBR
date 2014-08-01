@@ -267,7 +267,7 @@ sub _cdc_type {
         my $name = $fd->name;
 
         if ($name eq 'cdc_row_version') {
-            croak("table $rec->{name} has bad cdc_row_version field, should be integer unsigned not null") if __describe($fd) !~ /^(.*int):un:nn$/;
+            croak("table $rec->{name} has bad cdc_row_version field, should be integer unsigned not null") if __describe($fd) !~ /^(.*int.*):un:nn$/;
             $hasver = $1;
         }
         elsif ($name =~ /^cdc_/) {
