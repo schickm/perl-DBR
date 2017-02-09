@@ -15,8 +15,8 @@ my $GUID = 1;
 
 #here is a list of the currently supported databases and their connect string formats
 my %connectstrings = (
-		      Mysql  => 'dbi:mysql:host=-hostname-;mysql_enable_utf8=1',
-		      Mysql_UDS => 'dbi:mysql:mysql_socket=[-hostname-];mysql_enable_utf8=1',
+		      Mysql  => 'dbi:mysql:host=-hostname-;mysql_enable_utf8mb4=1',
+		      Mysql_UDS => 'dbi:mysql:mysql_socket=[-hostname-];mysql_enable_utf8mb4=1',
 		      SQLite => 'dbi:SQLite:dbname=-dbfile-',
 		      Pg     => 'dbi:Pg:dbname=-database-;host=-hostname-',
 		     );
