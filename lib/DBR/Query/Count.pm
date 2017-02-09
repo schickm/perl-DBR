@@ -37,7 +37,7 @@ sub run {
 
       my $conn     = $self->instance->connect('conn') or confess 'failed to connect';
       my ($count)  = $conn->selectrow_array($self->sql);
-      defined($count) or confess "failed to retrieve count";
+      defined($count) or confess "failed to retrieve count: $DBI::errstr";
 
       return $count;
 

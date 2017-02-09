@@ -93,7 +93,7 @@ sub select {
       }elsif ($params{-rawsth}) {
 
 	    my $sth = $query->run or return $self->_error('failed to run');
-	    $sth->execute() or croak('failed to execute sth');
+	    $sth->execute() or croak("failed to execute sth: $DBI::errstr");
 
 	    return $sth;
 
@@ -103,7 +103,7 @@ sub select {
 	    }
 
 	    my $sth = $query->run;
-	    $sth->execute() or croak ('failed to execute sth');
+	    $sth->execute() or croak ("failed to execute sth: $DBI::errstr");
 
 	    if ($params{-arrayref}) {
 		  return $sth->fetchall_arrayref(); # ->finish is automatic

@@ -78,7 +78,7 @@ sub begin {
       return $self->_error('Transaction is already open - cannot begin') if $self->{'_intran'};
 
       $self->_logDebug('BEGIN');
-      $self->{dbh}->do('BEGIN') or return $self->_error('Failed to begin transaction');
+      $self->{dbh}->do('BEGIN') or return $self->_error("Failed to begin transaction: $DBI::errstr");
       $self->{_intran} = 1;
 
       return 1;
@@ -95,7 +95,7 @@ sub commit{
           (shift @$precommit)->();
       }
 
-      $self->{dbh}->do('COMMIT') or return $self->_error('Failed to commit transaction');
+      $self->{dbh}->do('COMMIT') or return $self->_error("Failed to commit transaction: $DBI::errstr");
 
       $self->{_intran} = 0;
 
@@ -113,7 +113,7 @@ sub rollback{
       return $self->_error('Transaction is not open - cannot rollback') if !$self->{'_intran'};
 
       $self->_logDebug('ROLLBACK');
-      $self->{dbh}->do('ROLLBACK') or return $self->_error('Failed to rollback transaction');
+      $self->{dbh}->do('ROLLBACK') or return $self->_error("Failed to rollback transaction: $DBI::errstr");
 
       $self->{_intran} = 0;
 

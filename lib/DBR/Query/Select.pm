@@ -60,7 +60,7 @@ sub can_be_subquery { scalar( @{ $_[0]->fields || [] } ) == 1 }; # Must have exa
 
 sub run {
       my $self = shift;
-      return $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare"; # only run once
+      return $self->{sth} ||= $self->instance->getconn->prepare( $self->sql ) || confess "Failed to prepare: $DBI::errstr"; # only run once
 }
 sub reset {
       my $self = shift;

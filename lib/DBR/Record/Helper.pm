@@ -111,7 +111,7 @@ sub _set{
 					  sets     => $sets
 					 ) or return $self->_error('failed to create Query object');
 
-      my $rv = $query->run() or return $self->_error('failed to execute');
+      my $rv = $query->run() or return $self->_error("failed to execute: $DBI::errstr");
 
       foreach my $set (@$sets){
 	    $self->_setlocalval($record, $set->field, $set->value->raw->[0]);
@@ -138,7 +138,7 @@ sub delete{
 					   where    => $outwhere,
 					  ) or return $self->_error('failed to create Query object');
 
-       $query->run or return $self->_error('failed to execute');
+       $query->run or return $self->_error("failed to execute: $DBI::errstr");
 
        return 1;
 }
@@ -177,7 +177,7 @@ sub getfield{
 
     my $sth = $query->run or return $self->_error('failed to execute');
 
-    $sth->execute() or return $self->_error('Failed to execute sth');
+    $sth->execute() or return $self->_error("Failed to execute sth: $DBI::errstr");
 
     my %lut;
 
