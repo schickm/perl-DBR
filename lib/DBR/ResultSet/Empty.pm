@@ -25,6 +25,7 @@ sub next     { DUMMY }
 sub where    { DUMMY }
 sub count    { 0     }
 sub order_by { DUMMY }
+sub _execute { 1     }
 
 sub TO_JSON { [] }
 
